@@ -1,4 +1,4 @@
-"""Camera target node (Yoru V2).
+"""Camera target node (Yoru V3).
 
 Replaces V1's pixel-to-map coordinate transform with the camera-spot
 registry: the admin marks, on the saved map in the dashboard, the exact

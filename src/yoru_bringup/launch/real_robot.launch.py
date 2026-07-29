@@ -1,11 +1,12 @@
-"""REAL ROBOT bring-up - run this ON the Raspberry Pi (Yoru V2).
+"""REAL ROBOT bring-up - run this ON the Raspberry Pi 5 (Yoru V3).
 
     ros2 launch yoru_bringup real_robot.launch.py
 
 Runs everything that must live on the robot:
   - robot description (TF tree)
-  - L298N motor driver (PWM + encoders + PID + odometry)
-  - RPLIDAR
+  - Arduino motor bridge (kinematics + odometry; the Nano Every does PWM,
+    quadrature counting and the PID onboard)
+  - RPLIDAR (via the /dev/rplidar udev symlink)
   - robot camera (camera:=picam for the Pi Camera Module via camera_ros,
     camera:=usb for a USB webcam, camera:=none)
   - twist_mux (joystick > tracker > navigation priorities)
@@ -34,9 +35,9 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
                             OpaqueFunction, TimerAction)
-from launch.conditions import IfCondition, LaunchConfigurationEquals
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import EqualsSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 
 DEFAULT_MAP = os.path.expanduser('~/Yoru_bot_V3/maps/main_map.yaml')
@@ -104,20 +105,29 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(yoru_base_dir, 'launch', 'rplidar.launch.py')))
 
-    # Pi Camera Module (libcamera) - needs: sudo apt install ros-humble-camera-ros
+    # Pi Camera Module (IMX477 HQ camera) via libcamera.
+    #
+    # On Ubuntu 24.04 do NOT use the apt ros-jazzy-camera-ros: it links
+    # against Ubuntu's UPSTREAM libcamera, which ships no Raspberry Pi
+    # pipeline handlers. The Pi 5 needs rpi/pisp (its ISP differs entirely
+    # from the Pi 4's rpi/vc4), so the apt build reports "no cameras
+    # available" no matter how correct the ribbon cable and config.txt are.
+    # ./setup_pi_camera.sh builds Raspberry Pi's libcamera fork and
+    # camera_ros against it into ~/camera_ws.
+    #
     # format BGR888: the IMX477 otherwise auto-selects NV21, which the
     # JPEG compressor and cv_bridge cannot handle (empty/blank frames)
     camera_picam = Node(
         package='camera_ros', executable='camera_node', name='camera',
         parameters=[{'width': 640, 'height': 480, 'format': 'BGR888'}],
-        remappings=[('/camera/camera_info', '/camera/camera_info'),
-                    ('/camera/image_raw', '/camera/image_raw')],
-        condition=LaunchConfigurationEquals('camera', 'picam'),
+        condition=IfCondition(EqualsSubstitution(
+            LaunchConfiguration('camera'), 'picam')),
         output='screen')
     camera_usb = Node(
         package='yoru_core', executable='camera_publisher_node',
         parameters=[{'device': 0, 'fps': 5.0}],
-        condition=LaunchConfigurationEquals('camera', 'usb'),
+        condition=IfCondition(EqualsSubstitution(
+            LaunchConfiguration('camera'), 'usb')),
         output='screen')
 
     # twist_mux arbitrates joystick (100) > tracker/e-stop (20) > Nav2 (10)

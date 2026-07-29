@@ -1,4 +1,4 @@
-# Yoru V2 simulation parameters - TWO-ROOM world, one CCTV pipeline per room.
+# Yoru V3 simulation parameters - TWO-ROOM world, one CCTV pipeline per room.
 #
 #   cctv1 (room_a, east):  smoking person (scenario publisher injects device)
 #   cctv2 (room_b, west):  walking person (must never escalate)

@@ -1,4 +1,4 @@
-"""SERVER side - run this on the laptop (Yoru V2).
+"""SERVER side - run this on the laptop (Yoru V3).
 
     ros2 launch yoru_bringup server.launch.py            # real robot
     ros2 launch yoru_bringup server.launch.py sim:=true  # with the simulation

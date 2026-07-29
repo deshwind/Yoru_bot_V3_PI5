@@ -1,4 +1,4 @@
-# Yoru V2 real-deployment parameters.
+# Yoru V3 real-deployment parameters.
 #
 # Two machines, same Wi-Fi, same ROS_DOMAIN_ID (source ros_network.env):
 #   LAPTOP (server.launch.py): the laptop webcam IS the CCTV camera ->

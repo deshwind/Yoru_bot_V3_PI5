@@ -1,7 +1,31 @@
 """L298N motor driver node for the real robot (dissertation Section 3.3).
 
-HARDWARE-ONLY node: requires RPi.GPIO on a Raspberry Pi. In simulation the
-robot is driven by gazebo_ros2_control instead.
+LEGACY / REFERENCE IMPLEMENTATION. The supported motor path is
+arduino_driver_node: the Pi talks to an Arduino Nano Every over USB serial
+and the Arduino does PWM, quadrature counting and a 30 Hz PID onboard. This
+node is kept because it documents the direct-GPIO approach.
+
+HARDWARE-ONLY node: requires lgpio on a Raspberry Pi. In simulation the
+robot is driven by gz_ros2_control instead.
+
+PORTED FROM RPi.GPIO TO lgpio FOR THE RASPBERRY PI 5
+----------------------------------------------------
+RPi.GPIO cannot work on a Pi 5. It drives the GPIO by mapping the SoC's
+peripheral registers through /dev/mem, but on the Pi 5 the header GPIOs
+belong to the RP1 southbridge, not the SoC - so those registers are simply
+not there. On Ubuntu it is doubly wrong: Ubuntu expects the kernel
+character-device interface (/dev/gpiochipN) that lgpio uses.
+
+Two caveats worth knowing before trusting this node on a Pi 5:
+
+  1. lgpio's PWM is SOFTWARE timed. Under Ubuntu (no realtime kernel) the
+     duty cycle jitters with system load, so the wheels will not hold speed
+     as evenly as the Arduino's hardware PWM.
+  2. Encoder edges are delivered as userspace callbacks. At any real wheel
+     speed the Pi will MISS counts under load, and missed counts corrupt
+     odometry silently - the robot believes it travelled less than it did.
+
+Both are the reason the Arduino bridge exists and is the default.
 
   - PWM speed control on ENA/ENB at 1 kHz, direction via IN1-IN4
   - quadrature encoder feedback on interrupt-driven GPIO
@@ -62,26 +86,39 @@ class L298nDriverNode(Node):
         self.declare_parameter('cmd_vel_topic', '/cmd_vel_mux')
         self.declare_parameter('cmd_timeout', 0.5)
 
+        # -1 = autodetect the header's gpiochip. The RP1 on a Pi 5 is
+        # normally gpiochip0, but older Pi 5 kernels exposed it as
+        # gpiochip4, and getting this wrong drives the wrong pins.
+        self.declare_parameter('gpiochip', -1)
+
         try:
-            import RPi.GPIO as GPIO
+            import lgpio
         except ImportError:
             self.get_logger().fatal(
-                'RPi.GPIO not available. This node only runs on the Raspberry Pi. '
-                'In simulation the robot is driven by gazebo_ros2_control.')
+                'lgpio not available. This node only runs on a Raspberry Pi '
+                '(sudo apt install python3-lgpio). Note that RPi.GPIO is NOT '
+                'a substitute on the Pi 5: its GPIO lives on the RP1 '
+                'southbridge, which RPi.GPIO cannot reach. In simulation the '
+                'robot is driven by gz_ros2_control.')
             raise SystemExit(1)
-        self.gpio = GPIO
+        self.lgpio = lgpio
 
-        GPIO.setmode(GPIO.BCM)
+        chip = int(self.get_parameter('gpiochip').value)
+        if chip < 0:
+            chip = self._detect_gpiochip()
+        self.handle = lgpio.gpiochip_open(chip)
+        self.get_logger().info(f'Opened /dev/gpiochip{chip}')
+
         p = {n: int(self.get_parameter(n).value) for n in
              ('ena_pin', 'in1_pin', 'in2_pin', 'enb_pin', 'in3_pin', 'in4_pin')}
         for pin in p.values():
-            GPIO.setup(pin, GPIO.OUT)
+            lgpio.gpio_claim_output(self.handle, pin, 0)
         self.pins = p
-        freq = int(self.get_parameter('pwm_frequency').value)
-        self.pwm_a = GPIO.PWM(p['ena_pin'], freq)
-        self.pwm_b = GPIO.PWM(p['enb_pin'], freq)
-        self.pwm_a.start(0.0)
-        self.pwm_b.start(0.0)
+        self.pwm_freq = int(self.get_parameter('pwm_frequency').value)
+        # lgpio has no persistent PWM object: tx_pwm() is called with the new
+        # duty each time, so _set_motor drives it directly.
+        lgpio.tx_pwm(self.handle, p['ena_pin'], self.pwm_freq, 0)
+        lgpio.tx_pwm(self.handle, p['enb_pin'], self.pwm_freq, 0)
 
         self.left_ticks = 0
         self.right_ticks = 0
@@ -89,10 +126,16 @@ class L298nDriverNode(Node):
         self.right_dir = 1
         le = int(self.get_parameter('left_encoder_pin').value)
         re = int(self.get_parameter('right_encoder_pin').value)
-        GPIO.setup(le, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.setup(re, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(le, GPIO.BOTH, callback=self._left_tick)
-        GPIO.add_event_detect(re, GPIO.BOTH, callback=self._right_tick)
+        # claim_alert (not claim_input) is what enables edge callbacks
+        lgpio.gpio_claim_alert(self.handle, le, lgpio.BOTH_EDGES,
+                               lFlags=lgpio.SET_PULL_UP)
+        lgpio.gpio_claim_alert(self.handle, re, lgpio.BOTH_EDGES,
+                               lFlags=lgpio.SET_PULL_UP)
+        # Keep references: lgpio cancels a callback that gets garbage collected
+        self._left_cb = lgpio.callback(self.handle, le, lgpio.BOTH_EDGES,
+                                       self._left_tick)
+        self._right_cb = lgpio.callback(self.handle, re, lgpio.BOTH_EDGES,
+                                        self._right_tick)
 
         kp = self.get_parameter('kp').value
         ki = self.get_parameter('ki').value
@@ -115,10 +158,36 @@ class L298nDriverNode(Node):
 
         self.get_logger().info('L298N driver ready (PWM 1 kHz, PID 50 Hz)')
 
-    def _left_tick(self, _channel):
+    def _detect_gpiochip(self):
+        """Find the chip that owns the 40-pin header.
+
+        Pi 5 -> pinctrl-rp1, Pi 4 and earlier -> pinctrl-bcm2835/2711.
+        Falls back to 0, which is correct on a Pi 4 and on Pi 5 kernels
+        from 6.6.45 onwards.
+        """
+        import glob
+        import os
+        for path in sorted(glob.glob('/sys/bus/gpio/devices/gpiochip*')):
+            try:
+                with open(os.path.join(path, 'label')) as fh:
+                    label = fh.read().strip()
+            except OSError:
+                continue
+            if label.startswith('pinctrl-'):
+                num = int(os.path.basename(path).replace('gpiochip', ''))
+                self.get_logger().info(
+                    f'Autodetected header gpiochip{num} (label "{label}")')
+                return num
+        self.get_logger().warn(
+            'Could not autodetect the header gpiochip; falling back to 0. '
+            'Override with -p gpiochip:=N if the motors do not respond.')
+        return 0
+
+    # lgpio callback signature: (chip, gpio, level, timestamp)
+    def _left_tick(self, _chip, _gpio, _level, _tstamp):
         self.left_ticks += self.left_dir
 
-    def _right_tick(self, _channel):
+    def _right_tick(self, _chip, _gpio, _level, _tstamp):
         self.right_ticks += self.right_dir
 
     def cmd_callback(self, msg):
@@ -166,15 +235,17 @@ class L298nDriverNode(Node):
 
     def _set_motor(self, channel, duty):
         duty = max(-100.0, min(100.0, duty))
-        gpio = self.gpio
+        lgpio = self.lgpio
         if channel == 'a':
-            gpio.output(self.pins['in1_pin'], duty >= 0)
-            gpio.output(self.pins['in2_pin'], duty < 0)
-            self.pwm_a.ChangeDutyCycle(abs(duty))
+            lgpio.gpio_write(self.handle, self.pins['in1_pin'], int(duty >= 0))
+            lgpio.gpio_write(self.handle, self.pins['in2_pin'], int(duty < 0))
+            lgpio.tx_pwm(self.handle, self.pins['ena_pin'],
+                         self.pwm_freq, abs(duty))
         else:
-            gpio.output(self.pins['in3_pin'], duty >= 0)
-            gpio.output(self.pins['in4_pin'], duty < 0)
-            self.pwm_b.ChangeDutyCycle(abs(duty))
+            lgpio.gpio_write(self.handle, self.pins['in3_pin'], int(duty >= 0))
+            lgpio.gpio_write(self.handle, self.pins['in4_pin'], int(duty < 0))
+            lgpio.tx_pwm(self.handle, self.pins['enb_pin'],
+                         self.pwm_freq, abs(duty))
 
     def publish_odometry(self, now, v, w):
         odom = Odometry()
@@ -199,9 +270,15 @@ class L298nDriverNode(Node):
 
     def destroy_node(self):
         try:
-            self.pwm_a.stop()
-            self.pwm_b.stop()
-            self.gpio.cleanup()
+            # Stop the motors BEFORE releasing the chip, or the L298N holds
+            # whatever duty cycle was last latched and the robot drives on.
+            self.lgpio.tx_pwm(self.handle, self.pins['ena_pin'],
+                              self.pwm_freq, 0)
+            self.lgpio.tx_pwm(self.handle, self.pins['enb_pin'],
+                              self.pwm_freq, 0)
+            self._left_cb.cancel()
+            self._right_cb.cancel()
+            self.lgpio.gpiochip_close(self.handle)
         except Exception:  # noqa: BLE001
             pass
         super().destroy_node()

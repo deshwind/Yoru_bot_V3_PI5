@@ -1,4 +1,4 @@
-"""ONE-COMMAND simulation: robot + server together (Yoru V2).
+"""ONE-COMMAND simulation: robot + server together (Yoru V3).
 
     ./start_sim.sh          (which runs: ros2 launch yoru_bringup sim_full.launch.py)
 

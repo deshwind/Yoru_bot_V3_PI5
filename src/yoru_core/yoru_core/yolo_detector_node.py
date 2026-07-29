@@ -1,4 +1,4 @@
-"""YOLO detector node (Yoru V2).
+"""YOLO detector node (Yoru V3).
 
 Detects objects from one of four camera sources (ROS topic / USB / RTSP /
 video file) and publishes vision_msgs/Detection2DArray in pixel coordinates.

@@ -1,4 +1,4 @@
-"""Admin web dashboard node (Yoru V2).
+"""Admin web dashboard node (Yoru V3).
 
 Serves the password-protected admin console using only the Python standard
 library (plus cv2/cv_bridge already used elsewhere). Runs on the server

@@ -1,9 +1,16 @@
 """Robot camera publisher (USB webcam via OpenCV/V4L2).
 
 Publishes /camera/image_raw for the incident emailer's close-up shots and
-any on-robot perception. For the Raspberry Pi Camera Module (ribbon cable)
-on Ubuntu 22.04 use the 'camera_ros' package instead (libcamera based);
-pi_hardware.launch.py selects between them with the camera:=picam|usb arg.
+any on-robot perception.
+
+For the Raspberry Pi Camera Module (ribbon cable) use the 'camera_ros'
+package instead (libcamera based); real_robot.launch.py selects between
+them with the camera:=picam|usb|none argument.
+
+On a Pi 5 + Ubuntu 24.04, camera_ros must be built from source against
+Raspberry Pi's libcamera fork - see setup_pi_camera.sh. This V4L2/OpenCV
+node needs none of that, which makes camera:=usb the reliable fallback if
+the libcamera build gives trouble.
 """
 
 import rclpy

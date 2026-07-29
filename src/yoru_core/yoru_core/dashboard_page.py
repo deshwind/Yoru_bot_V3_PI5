@@ -1,4 +1,4 @@
-"""Embedded HTML page for the Yoru V2 admin dashboard (single file, no assets).
+"""Embedded HTML page for the Yoru V3 admin dashboard (single file, no assets).
 
 Apple "liquid glass" design: frosted translucent cards (backdrop blur) over a
 soft aurora gradient, pill buttons, system font stack. Follows the device

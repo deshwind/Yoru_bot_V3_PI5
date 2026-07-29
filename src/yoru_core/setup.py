@@ -20,7 +20,7 @@ setup(
     zip_safe=True,
     maintainer='Deshwin Dharile',
     maintainer_email='deshwind02@gmail.com',
-    description='Yoru V2 - CCTV-triggered compliance robot core nodes',
+    description='Yoru V3 - CCTV-triggered compliance robot core nodes',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
