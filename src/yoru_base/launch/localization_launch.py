@@ -90,7 +90,13 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'map',
-            default_value=os.path.join(bringup_dir, 'maps', 'turtlebot3_world.yaml'),
+            # Callers (real_robot.launch.py / sim.launch.py) always pass
+            # map:=, so this default is only hit when running this launch
+            # file directly. V2 inherited nav2_bringup's
+            # 'maps/turtlebot3_world.yaml', a path that does not exist in
+            # this repo - it failed with a confusing map_server error rather
+            # than saying the map was never specified.
+            default_value=os.path.expanduser('~/Yoru_bot_V3/maps/main_map.yaml'),
             description='Full path to map yaml file to load'),
 
         DeclareLaunchArgument(

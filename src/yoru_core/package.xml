@@ -25,12 +25,14 @@
   <exec_depend>python3-opencv</exec_depend>
   <!-- arduino_driver_node talks to the Nano Every over USB serial -->
   <exec_depend>python3-serial</exec_depend>
-  <!-- NOT declared: python3-lgpio, needed only by the legacy direct-GPIO
-       l298n_driver_node. lgpio replaces RPi.GPIO, which cannot work on the
-       Pi 5 (GPIO now sits behind the RP1 southbridge, not on the SoC).
-       setup_pi.sh installs it; the node degrades with a clear error if it
-       is missing, so rosdep should not hard-fail a laptop build over it.
-       The supported motor path is the Arduino bridge. -->
+  <!-- Deliberately NOT declared: python3-lgpio. It is a valid rosdep key and
+       would resolve fine, but it is needed only by l298n_driver_node - the
+       legacy direct-GPIO reference implementation, not the supported motor
+       path (the Arduino bridge). Keeping it out means a laptop-only checkout
+       does not pull a GPIO library it will never use; setup_pi.sh installs
+       it on the Pi, and the node exits with a clear message if it is absent.
+       lgpio replaces RPi.GPIO, which cannot work on a Pi 5 at all: GPIO now
+       sits behind the RP1 southbridge rather than on the SoC. -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
