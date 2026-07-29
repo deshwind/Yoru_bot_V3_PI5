@@ -15,9 +15,10 @@ the libcamera build gives trouble.
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage, Image
 
 import cv2
+import numpy as np
 from cv_bridge import CvBridge
 
 
@@ -32,6 +33,8 @@ class CameraPublisherNode(Node):
         self.declare_parameter('fps', 5.0)
         self.declare_parameter('frame_id', 'camera_link_optical')
         self.declare_parameter('topic', '/camera/image_raw')
+        # JPEG quality for the companion /compressed topic (see below)
+        self.declare_parameter('jpeg_quality', 70)
 
         self.bridge = CvBridge()
         device = int(self.get_parameter('device').value)
@@ -45,8 +48,22 @@ class CameraPublisherNode(Node):
                 f'Cannot open camera /dev/video{device}. '
                 'Node stays alive and retries every 5 s.')
 
-        self.pub = self.create_publisher(
-            Image, self.get_parameter('topic').value, 2)
+        topic = self.get_parameter('topic').value
+        self.pub = self.create_publisher(Image, topic, 2)
+
+        # Companion JPEG topic. camera_ros (the picam path) gets this for
+        # free from image_transport, and both yoru_real.yaml's
+        # robot_camera_topic and the incident emailer default to
+        # '/camera/image_raw/compressed'. Publishing raw only would leave
+        # the dashboard's robot pane blank and the evidence email without
+        # its close-up whenever camera:=usb is used - which is exactly the
+        # fallback recommended when the Pi 5 libcamera build misbehaves.
+        # It also matters over Wi-Fi: raw 640x480 is ~1 MB a frame, JPEG
+        # ~45 KB, and that was the difference between an unusable and a
+        # usable feed on campus Wi-Fi.
+        self.compressed_pub = self.create_publisher(
+            CompressedImage, topic + '/compressed', 2)
+
         fps = max(self.get_parameter('fps').value, 0.5)
         self.create_timer(1.0 / fps, self.tick)
         self.create_timer(5.0, self.reopen_if_needed)
@@ -64,10 +81,24 @@ class CameraPublisherNode(Node):
         ok, frame = self.capture.read()
         if not ok:
             return
+        stamp = self.get_clock().now().to_msg()
+        frame_id = self.get_parameter('frame_id').value
+
         msg = self.bridge.cv2_to_imgmsg(frame, 'bgr8')
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = self.get_parameter('frame_id').value
+        msg.header.stamp = stamp
+        msg.header.frame_id = frame_id
         self.pub.publish(msg)
+
+        quality = int(self.get_parameter('jpeg_quality').value)
+        ok, buf = cv2.imencode('.jpg', frame,
+                               [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+        if ok:
+            jpeg = CompressedImage()
+            jpeg.header.stamp = stamp
+            jpeg.header.frame_id = frame_id
+            jpeg.format = 'jpeg'
+            jpeg.data = np.asarray(buf).tobytes()
+            self.compressed_pub.publish(jpeg)
 
     def destroy_node(self):
         try:
