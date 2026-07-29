@@ -1,4 +1,196 @@
-# Yoru V2 — Development Log
+# Yoru V3 — Development Log
+
+*Sessions 1–5 below were V2 (ROS 2 Humble, Raspberry Pi 4). Session 6 is the
+port to Jazzy / Pi 5 that created this repo.*
+
+## Session 6 — 2026-07-29 (port to ROS 2 Jazzy + Raspberry Pi 5)
+
+New repo `Yoru_bot_V3_PI5`, seeded from V2's full history so `git blame`
+still reaches the original work. V2 stays as the working Humble / Pi 4
+version. **Nothing in this session has been run on hardware or in Gazebo** —
+it is verified by reading, cross-checked against upstream Jazzy sources, and
+every file parses (Python AST, YAML, XML). First build will surface what
+static checking cannot.
+
+### The three silent failures
+
+These are the reason `docs/PI5_BRINGUP.md` checks for *data on topics* rather
+than for processes in `ros2 node list`. In each case the process starts, the
+logs look healthy, and nothing flows.
+
+1. **`twist_mux use_stamped` defaults to `true`.** twist_mux reads the
+   parameter with `get_parameter()` without declaring it, and falls back to
+   `true`. The flag switches **both** its subscriptions and its publisher
+   between `Twist` and `TwistStamped`. Left unset on Jazzy, twist_mux would
+   have subscribed as `TwistStamped` while Nav2, the dashboard teleop and the
+   FSM e-stop all publish `Twist`. ROS 2 matches topics by type, so nothing
+   connects and nothing is logged: the robot ignores every velocity command
+   **and the emergency stop is silently dead.** Pinned `false` in
+   `twist_mux.yaml` with a comment explaining why it must not be tidied away.
+   This was the single most dangerous find of the port.
+2. **slam_toolbox is a LifecycleNode in Jazzy.** V2 launched
+   `async_slam_toolbox_node` as a plain Node. On Jazzy that starts the
+   process and it appears in `ros2 node list`, but stays `unconfigured`
+   forever — no `/scan` subscription, no `/map`, no `map→odom`. A robot that
+   boots perfectly and never maps anything. `online_async_launch.py` now
+   drives the configure→activate transitions.
+3. **Hardcoded `use_sim_time: True`** in ~15 Nav2 sections. On the real robot
+   with no `/clock` publisher, Nav2 blocks waiting for time and never accepts
+   a goal, logging nothing useful. Removed everywhere; the launch argument is
+   now the single source of truth via `SetParameter`.
+
+Fixing (3) had a subtle prerequisite. `RewrittenYaml` can only *add* a
+missing key when given a fully qualified dotted path containing
+`ros__parameters`; V2 passed the bare leaf `use_sim_time`, so with the key
+gone from the YAML the rewrite would silently no-op and AMCL would run on
+wall-clock time under Gazebo. Hence `SetParameter` inside a `GroupAction`
+rather than a rewrite.
+
+### Velocity chain
+
+Jazzy's `diff_drive_controller` takes `TwistStamped` only — `use_stamped_vel`
+was removed and `~/cmd_vel_unstamped` no longer exists. Leaving
+`use_stamped_vel` in `my_controllers.yaml` would make `controller_manager`
+refuse to load the controller.
+
+Chosen approach: keep the whole twist_mux priority chain on plain `Twist` and
+convert exactly once, at the last hop, **in simulation only**:
+
+```
+Nav2 / dashboard teleop / FSM e-stop / joystick   (Twist)
+    -> twist_mux -> /cmd_vel_mux                  (Twist)
+        -> [real]  arduino_driver_node            (Twist, unchanged)
+        -> [sim]   twist_stamper_node -> /diff_cont/cmd_vel (TwistStamped)
+```
+
+Deliberate: the hardware path carries no message-type change at all. It is
+the path that cannot be tested from a laptop and the most expensive to get
+wrong. `twist_stamper_node` is written in-tree (~25 lines) rather than
+depending on the third-party `twist_stamper` package.
+
+### Gazebo Classic → Harmonic
+
+Classic went EOL January 2025; `gazebo_ros` and `gazebo_ros2_control` were
+never released for Jazzy/Noble. Every sim plugin moved:
+
+- `gazebo_ros2_control/GazeboSystem` → `gz_ros2_control/GazeboSimSystem`
+- `<sensor type="ray">`/`<ray>` → `<sensor type="gpu_lidar">`/`<lidar>`
+- `libgazebo_ros_{camera,ray_sensor,diff_drive}.so` → deleted; Harmonic has
+  no per-sensor ROS plugins, so `ros_gz_bridge` + `config/gz_bridge.yaml`
+  carries Gazebo Transport topics onto ROS
+- `spawn_entity.py` → `ros_gz_sim create`
+- `GAZEBO_MODEL_PATH` → `GZ_SIM_RESOURCE_PATH` (Harmonic ignores the
+  `<gazebo_ros gazebo_model_path>` export, so without this the chassis mesh
+  silently fails to load and the robot renders as bare collision boxes)
+
+Two Harmonic traps worth recording. World files must now declare their system
+plugins explicitly — Harmonic loads *nothing* implicitly, and omitting the
+Sensors system gives a world that renders perfectly while no camera or lidar
+ever produces data. And every sensor needs `<gz_frame_id>`, or messages carry
+Gazebo's scoped link name, TF cannot resolve them, and the costmaps and
+slam_toolbox discard every scan.
+
+All five worlds ported: 61 Classic Ogre material scripts converted to
+explicit ambient/diffuse/specular, `model://sun` and `model://table_marble`
+replaced (Classic's bundled model database does not exist in Harmonic), and
+actor skins moved to Fuel URIs — so the first sim run needs internet, cached
+thereafter in `~/.gz/fuel`.
+
+Also fixed a latent bug in `two_room_world.world`: the layout diagram drew
+walls with hyphens, and `--` is illegal inside an XML comment. Classic's
+lenient parser accepted it; a strict parser rejects the file at line 7.
+
+### Nav2 / Jazzy API
+
+- `progress_checker_plugin` → `progress_checker_plugins` (renamed **and**
+  retyped string → vector<string>; the old key is ignored silently, leaving
+  the controller with no progress checker)
+- `bt_navigator`: dropped V2's 45-line `plugin_lib_names` list — Jazzy
+  populates built-ins implicitly and several of those names no longer
+  resolve — added the required `navigators` key and `error_code_names`
+- plugin names `pkg/Type` → `pkg::Type` for the planner and all behaviors
+- dropped the `bt_navigator_navigate_*_rclcpp_node` sections
+- `behavior_server`: `costmap_topic`/`footprint_topic` split into `local_`
+  and `global_` variants
+- `LaunchConfigurationEquals` → `IfCondition(EqualsSubstitution(...))`
+
+Kept **DWB**, not Jazzy's new MPPI default: the critic weights and
+`sim_time` 1.7 were tuned against this chassis on carpet, and switching would
+mean redoing that from scratch. All other navigation tuning is unchanged.
+
+`navigation_launch.py` was minimally ported rather than replaced with
+upstream's Jazzy copy, which adds `route_server`, `collision_monitor` and
+`docking_server` to `lifecycle_nodes`. The lifecycle manager requires every
+listed node to reach `active` or the whole bringup aborts, so adopting it
+would make the robot depend on `nav2_route` and `opennav_docking` for servers
+it never uses — and would have discarded the delayed-lifecycle-manager and
+bond hardening fix from `0fea4fb`. Kept `velocity_smoother`'s
+`cmd_vel_smoothed → cmd_vel` remap too: upstream leaves it alone because its
+collision_monitor republishes `cmd_vel`, and this robot has no
+collision_monitor, so without the remap nothing reaches twist_mux.
+
+### Raspberry Pi 5 platform
+
+- **`RPi.GPIO` cannot work.** It maps the SoC's peripheral registers through
+  `/dev/mem`, but the Pi 5's header GPIOs belong to the RP1 southbridge, so
+  those registers are not there. `l298n_driver_node` ported to `lgpio`
+  (`tx_pwm`, `gpio_claim_alert` + `lgpio.callback` with its
+  `(chip, gpio, level, timestamp)` signature, callback handles held on the
+  node so they are not garbage collected). `destroy_node` now zeroes both PWM
+  channels **before** closing the chip — releasing the chip first leaves the
+  L298N holding the last latched duty and the robot drives away during
+  shutdown. Added gpiochip autodetection via the sysfs `pinctrl-*` label,
+  since older Pi 5 kernels exposed the header as `gpiochip4` rather than
+  `gpiochip0`.
+- Still a reference implementation, not a recommendation: lgpio's PWM is
+  software timed so duty jitters with load, and encoder edges arrive as
+  userspace callbacks so the Pi misses counts under load — and missed counts
+  corrupt odometry silently.
+- **udev symlinks** `/dev/rplidar`, `/dev/arduino`. V2's lidar port was a USB
+  by-path string encoding the *Pi 4's* PCIe controller address, which does not
+  exist on a Pi 5; the driver exited at startup.
+- **PEP 668**: `pip3 install --user` now fails on Ubuntu 24.04. piper-tts
+  moved to a venv at `~/yoru_venv` that `start_robot.sh` puts on `PYTHONPATH`
+  rather than activating, so the system `rclpy` and `cv_bridge` stay visible.
+- **Pi camera is the most fragile part.** Ubuntu's apt libcamera is the
+  *upstream* build and ships no Raspberry Pi pipeline handlers. The Pi 5 needs
+  `rpi/pisp`, whose ISP differs entirely from the Pi 4's `rpi/vc4`, so
+  `ros-jazzy-camera-ros` from apt reports `no cameras available` however
+  correct the ribbon cable and config.txt are. `setup_pi_camera.sh` builds
+  Raspberry Pi's libcamera fork and camera_ros against it in `~/camera_ws`
+  via `colcon-meson`, with pinned refs, and removes the apt package if
+  present. `camera:=usb` remains the escape hatch — the onboard camera only
+  feeds evidence close-ups and the dashboard, not the YOLO pipeline.
+- Documented the **27 W PD supply** requirement: on a non-PD supply the Pi 5
+  caps USB current at 600 mA, which will not carry lidar + Arduino + speaker.
+  Brown-outs mimic software bugs (scan dropouts, phantom spikes, serial
+  resyncs), so `vcgencmd get_throttled` is now step one of debugging.
+
+### Repo hygiene
+
+- `.gitattributes` forcing LF. The repo is edited on Windows and run on
+  Linux; without it the Pi receives CRLF shell scripts and bash fails on them.
+- Corrected the README's `enc_counts_per_rev` 1965 and `wheel_radius`
+  0.0325 m, stale since the rewheel in `aed6a10`. The code has said 1320 and
+  0.0435 m (87 mm wheels) throughout. That constant scales every distance the
+  robot believes it travelled, so a wrong value in the docs is worse than
+  cosmetic.
+- Removed `launch_sim.launch.py` (unreferenced Classic duplicate of
+  `sim.launch.py`, left over from the original tutorial) and
+  `gazebo_params.yaml` (configured Classic's ROS plugin publish rate; no
+  Harmonic equivalent).
+
+### Next steps
+
+1. **Build on the Pi**: `./deploy_to_pi.sh` then work
+   `docs/PI5_BRINGUP.md` top to bottom. Expect the first colcon build to
+   surface missing rosdeps.
+2. **Verify `enc_counts_per_rev` 1320 with a controlled 1 m test.** Never
+   confirmed; hand-rotation readings disagreed badly across sessions.
+3. **Sim smoke test** on the laptop: `/clock` first, then `/scan` and the
+   camera topics, then a Nav2 goal.
+4. Re-mark camera and base spots — old spots hold coordinates in the old
+   map's frame.
 
 ## Session 5 — 2026-07-09 (vape-aware specialist model trained + deployed)
 

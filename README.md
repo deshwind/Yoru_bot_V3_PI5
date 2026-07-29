@@ -1,11 +1,23 @@
-# Yoru Bot V2 — CCTV-Triggered Smoking-Compliance Robot
+# Yoru Bot V3 — CCTV-Triggered Smoking-Compliance Robot
 
-ROS 2 Humble. A laptop acts as the **CCTV cameras + server**: it watches for
-smoking and vaping with YOLO, announces *"Smoking is not allowed"* through
-its speakers, and if the person carries on it dispatches the **autonomous
-robot** (Raspberry Pi 4, RPLIDAR, Pi camera) to the spot marked for that
-camera on the map. The robot repeats a direct warning three times, photos
-are captured and emailed to the admin via Gmail, and the incident is logged.
+**ROS 2 Jazzy on Ubuntu 24.04, Raspberry Pi 5, Gazebo Harmonic.** A laptop
+acts as the **CCTV cameras + server**: it watches for smoking and vaping with
+YOLO, announces *"Smoking is not allowed"* through its speakers, and if the
+person carries on it dispatches the **autonomous robot** (Raspberry Pi 5,
+RPLIDAR A1, Pi HQ camera) to the spot marked for that camera on the map. The
+robot repeats a direct warning three times, photos are captured and emailed
+to the admin via Gmail, and the incident is logged.
+
+> **V3 is the Jazzy / Pi 5 port of [Yoru_bot_V2](https://github.com/deshwind/Yoru_bot_V2)**,
+> which remains the working Humble / Pi 4 version. The perception, tracking,
+> confirmation and FSM logic are unchanged; what changed is the platform
+> underneath. See [V3 vs V2](#v3-vs-v2-the-jazzy--pi-5-port) for the list,
+> and **[docs/PI5_BRINGUP.md](docs/PI5_BRINGUP.md)** for a stage-by-stage
+> bring-up checklist with the expected output at each step.
+>
+> **Both machines must run Jazzy.** Humble and Jazzy are not interoperable:
+> a Humble laptop and a Jazzy Pi will discover each other and then exchange
+> nothing, with no error on either side.
 
 Everything is managed from a **password-protected web dashboard** served by
 the laptop — first-run password setup, keyboard mapping drive, marking
@@ -17,9 +29,18 @@ camera and base spots on the map, live CCTV/robot views, incident history.
 ./start_sim.sh
 ```
 
-That starts everything: Gazebo (two-room world) + SLAM/Nav2 + RViz + CCTV
-smoking detection + PA voice + escalation FSM + the admin dashboard, which
-opens at http://localhost:8080.
+That starts everything: Gazebo Harmonic (two-room world) + SLAM/Nav2 + RViz +
+CCTV smoking detection + PA voice + escalation FSM + the admin dashboard,
+which opens at http://localhost:8080.
+
+Needs Gazebo **Harmonic** (`gz sim --version` → 8.x), plus `ros-jazzy-ros-gz`
+and `ros-jazzy-gz-ros2-control`. The **first run needs internet**: the two
+actor skins now come from Gazebo Fuel, because Classic bundled `stand.dae`
+and `walk.dae` locally and Harmonic does not. They cache in `~/.gz/fuel`.
+
+If the sim comes up and appears to hang with nothing logged, check `/clock`
+first — `ros2 topic hz /clock`. Every node runs `use_sim_time:=true`, so with
+no clock they all block waiting for time to start.
 
 Prefer the two-terminal split that mirrors the real deployment?
 
@@ -49,19 +70,35 @@ incident is logged (and emailed, if configured).
 
 ## Real robot — laptop + Raspberry Pi (same Wi-Fi)
 
-One-time Pi setup:
+One-time Pi setup — the Pi needs Ubuntu 24.04 Server arm64 with the
+`ros-jazzy-ros-base` metapackage already installed
+([docs.ros.org](https://docs.ros.org/en/jazzy/Installation.html)):
 
 ```bash
 ./connect_pi.sh <pi-ip> <user>      # check the link
-scp setup_pi.sh <user>@<pi-ip>: && ssh <user>@<pi-ip> ./setup_pi.sh
 ./deploy_to_pi.sh <pi-ip> <user>    # sync sources + build on the Pi
+ssh <user>@<pi-ip> 'cd ~/Yoru_bot_V3 && ./setup_pi.sh'
 ```
+
+`setup_pi.sh` installs the ROS drivers, the `~/yoru_venv` for pip-only
+packages, the udev rules, and builds the Pi camera stack. **Log out and back
+in afterwards** — the `dialout`/`video` group changes need a new session, and
+without `dialout` the Arduino fails with `Permission denied`.
+
+Add `--no-camera` to skip the 15–25 minute libcamera build and get driving
+first; run `./setup_pi_camera.sh` on its own later.
+
+**Work through [docs/PI5_BRINGUP.md](docs/PI5_BRINGUP.md) on a first
+bring-up.** It goes stage by stage — power, devices, lidar, motors, camera,
+TF, SLAM, Nav2, networking — with the expected output and the likely failure
+at each step. Several Jazzy failure modes are silent, so a node appearing in
+`ros2 node list` is not evidence it is working.
 
 Daily operation:
 
 ```bash
 # On the Pi — background, survives the SSH session closing:
-ssh <user>@<pi-ip> 'cd ~/Yoru_bot_V2 && setsid nohup ./start_robot.sh \
+ssh <user>@<pi-ip> 'cd ~/Yoru_bot_V3 && setsid nohup ./start_robot.sh \
     > /tmp/robot.log 2>&1 < /dev/null & echo starting'
 
 # On the laptop:
@@ -90,7 +127,7 @@ slowly (gentle turns give the cleanest scans), **Save Map**, copy it to the
 robot, and restart:
 
 ```bash
-scp ~/Yoru_bot_V2/maps/main_map.* <user>@<pi-ip>:~/Yoru_bot_V2/maps/
+scp ~/Yoru_bot_V3/maps/main_map.* <user>@<pi-ip>:~/Yoru_bot_V3/maps/
 ```
 
 Maps are git-ignored — they move by `scp`, not by git. Re-mark the camera
@@ -385,7 +422,7 @@ publishes on `cmd_vel_tracker`, which outranks Nav2 in twist_mux
 | Laser range used | 0.3 – 12.0 m (A1 real range; 0.3 excludes robot self-hits) |
 | Scan linking | `minimum_travel_distance` 0.2 m, `minimum_travel_heading` 0.25 rad |
 | Localization | AMCL, differential motion model, 500–2000 particles, auto initial pose at map origin |
-| Global planner | NavFn (`nav2_navfn_planner/NavfnPlanner`) |
+| Global planner | NavFn (`nav2_navfn_planner::NavfnPlanner` — Jazzy uses `::`, not `/`) |
 | Local planner | DWB (`dwb_core::DWBLocalPlanner`), `sim_time` 1.7 s |
 | Speed limits | `max_vel_x` 0.26 m/s, `max_vel_theta` 1.0 rad/s |
 | Goal tolerance | 0.25 m / 0.25 rad |
@@ -399,10 +436,11 @@ Odometry is wheel-encoder based (`arduino_driver_node`), publishing
 
 | Package | Contents |
 |---|---|
-| `yoru_base` | Robot base: URDF/xacro, ros2_control (sim), SLAM + Nav2 configs, joystick, RPLIDAR |
-| `yoru_core` | All nodes: YOLO detector, tracker, event confirmation, camera target, FSM, nav goal sender, audio, dashboard, emailer, logger, Arduino motor bridge, map reset |
+| `yoru_base` | Robot base: URDF/xacro, ros2_control (sim), SLAM + Nav2 configs, `gz_bridge.yaml`, joystick, RPLIDAR |
+| `yoru_core` | All nodes: YOLO detector, tracker, event confirmation, camera target, FSM, nav goal sender, audio, dashboard, emailer, logger, Arduino motor bridge, twist stamper, map reset |
 | `yoru_bringup` | Worlds, parameter files, RViz config, the launch files |
 | `firmware/` | `yoru_motor_bridge` — Arduino sketch for the Nano Every |
+| `udev/` | `99-yoru.rules` — stable `/dev/rplidar` and `/dev/arduino` symlinks |
 
 ### Launch files
 
@@ -418,22 +456,44 @@ Both `sim` and `real_robot` support `mode:=auto|mapping|localization`
 
 ## 5. Hardware (robot)
 
-Raspberry Pi 4 (Ubuntu 22.04 + ROS 2 Humble base), **Arduino Nano Every** →
-L298N → DC motors with quadrature encoders, RPLIDAR A1 (USB), Pi HQ Camera
-(IMX477, ribbon), USB speaker, PS4 pad.
+Raspberry Pi 5 (Ubuntu 24.04 Server arm64 + ROS 2 Jazzy base), **Arduino Nano
+Every** → L298N → DC motors with quadrature encoders, RPLIDAR A1 (USB), Pi HQ
+Camera (IMX477, ribbon), USB speaker, PS4 pad.
+
+**Power the Pi 5 from the official 27 W USB-C PD supply (5.1 V / 5 A).** This
+is not optional with this peripheral load: on a non-PD supply the Pi 5 caps
+total USB current at 600 mA, which will not carry lidar + Arduino + speaker.
+A 3 A charger boots the Pi and then browns out when the lidar motor spins up,
+producing exactly the symptoms that read as software bugs — scan dropouts,
+phantom range spikes, serial resyncs. Check with `vcgencmd get_throttled`
+(`0x0` is clean) before debugging anything else. Use the active cooler too;
+a long mapping run will otherwise thermal-throttle and SLAM falls behind.
 
 The Pi does **not** drive the L298N over GPIO. It talks to the Nano Every
 over USB serial (57600 baud) running `firmware/yoru_motor_bridge` — a
 ROSArduinoBridge port that does PWM, quadrature counting and a 30 Hz PID
 onboard, with a 2 s auto-stop dead-man. `arduino_driver_node` on the Pi
-handles kinematics and odometry. (`l298n_driver_node` is the legacy
-direct-GPIO driver, kept for reference.)
+handles kinematics and odometry.
+
+`l298n_driver_node` is the legacy direct-GPIO driver, kept for reference and
+ported to `lgpio`. **RPi.GPIO cannot work on a Pi 5**: it drives GPIO by
+mapping the SoC's peripheral registers through `/dev/mem`, but the Pi 5's
+header GPIOs belong to the RP1 southbridge rather than the SoC, so those
+registers are not there. Even on `lgpio` this path remains a reference
+implementation, not a recommendation — its PWM is software timed (duty
+jitters with load on a non-realtime kernel) and encoder edges arrive as
+userspace callbacks, so the Pi misses counts under load and missed counts
+corrupt odometry silently. That is why the Arduino bridge exists.
+
+Devices are addressed through udev symlinks (`/dev/rplidar`, `/dev/arduino`)
+installed by `setup_pi.sh` from `udev/99-yoru.rules`. V2's USB by-path string
+encoded the *Pi 4's* PCIe controller address and does not exist on a Pi 5.
 
 Flash the firmware from the Pi:
 
 ```bash
 arduino-cli compile -b arduino:megaavr:nona4809 firmware/yoru_motor_bridge
-arduino-cli upload -p /dev/ttyACM0 -b arduino:megaavr:nona4809 \
+arduino-cli upload -p /dev/arduino -b arduino:megaavr:nona4809 \
     firmware/yoru_motor_bridge
 ```
 
@@ -446,19 +506,85 @@ the URDF/sim configs:
 
 | Constant | Value |
 |---|---|
-| `enc_counts_per_rev` | 1965 (measured by hand rotation) |
-| `wheel_radius` | 0.0325 m (65 mm wheels) |
+| `enc_counts_per_rev` | 1320 (measured by hand rotation) |
+| `wheel_radius` | 0.0435 m (87 mm wheels) |
 | `wheel_separation` | 0.32 m (measured centre-to-centre) |
 
+These are the values actually in `yoru_real.yaml`, `my_controllers.yaml` and
+the URDF. (V2's README documented 1965 counts and 0.0325 m — the pre-rewheel
+figures, left stale after the recalibration in `aed6a10`. Since
+`enc_counts_per_rev` scales every distance the robot believes it travelled,
+a stale value in the docs is worth more than a typo's worth of confusion.)
+
 If odometry drifts or maps come out smeared, re-verify `enc_counts_per_rev`
-first — it scales every distance the robot believes it has travelled.
+first.
 
 ### Robot voice
 
 The robot speaks with **Piper** neural TTS (`voices/en_GB-alba-medium.onnx`,
 git-ignored). Without piper installed it falls back to espeak-ng, then to
-pre-generated audio files. Install on the Pi with `pip install --user piper-tts`
-plus a voice model from the Rhasspy piper-voices release.
+pre-generated audio files.
+
+`setup_pi.sh` installs it into a venv at `~/yoru_venv` and downloads the
+voice model. It cannot use `pip install --user`: Ubuntu 24.04 enforces
+PEP 668, which makes that fail with `error: externally-managed-environment`.
+`start_robot.sh` puts the venv on `PYTHONPATH` rather than activating it, so
+the system `rclpy` and `cv_bridge` stay visible.
+
+## V3 vs V2 (the Jazzy / Pi 5 port)
+
+The perception, tracking, C1–C7 confirmation, escalation FSM, dashboard,
+logger and emailer are **unchanged**. So is every navigation tuning value —
+speeds, tolerances, costmap layers, footprint and the DWB critic weights are
+the numbers validated on the real robot. DWB is deliberately kept rather than
+switching to Jazzy's new MPPI default, because those weights and `sim_time`
+were tuned against this chassis on carpet.
+
+What changed is the platform:
+
+| Area | V2 (Humble / Pi 4) | V3 (Jazzy / Pi 5) |
+|---|---|---|
+| Motor command topic | `/diff_cont/cmd_vel_unstamped` | `/cmd_vel_mux` |
+| Lidar / Arduino ports | USB by-path and by-id | `/dev/rplidar`, `/dev/arduino` udev symlinks |
+| GPIO (legacy node) | `RPi.GPIO` | `lgpio` (RP1 needs the char device) |
+| pip installs | `pip3 install --user` | venv at `~/yoru_venv` (PEP 668) |
+| Simulator | Gazebo Classic | Gazebo Harmonic + `ros_gz` |
+| Sim control plugin | `gazebo_ros2_control` | `gz_ros2_control` |
+| Sim sensor plumbing | per-sensor ROS plugins | `ros_gz_bridge` + `config/gz_bridge.yaml` |
+| slam_toolbox | plain Node | LifecycleNode (configure + activate) |
+| Pi camera | apt `camera-ros` | source build against RPi's libcamera fork |
+
+Three of these were **silent** failures — the process starts, the logs look
+healthy, and no data flows. They are the reason
+[docs/PI5_BRINGUP.md](docs/PI5_BRINGUP.md) checks for data on topics rather
+than for processes in `ros2 node list`:
+
+- **`twist_mux use_stamped`.** twist_mux reads this parameter without
+  declaring it and defaults it to `true` when absent, and the flag switches
+  *both* its subscriptions and its publisher between `Twist` and
+  `TwistStamped`. Left unset on Jazzy, twist_mux would subscribe as
+  `TwistStamped` while Nav2, the dashboard teleop and the FSM e-stop all
+  publish `Twist`. ROS 2 matches topics by type, so nothing connects and
+  nothing is logged: the robot ignores every velocity command **and the
+  emergency stop is silently dead.** `config/twist_mux.yaml` now pins it
+  `false`, with a comment explaining why it must not be tidied away.
+- **slam_toolbox's lifecycle.** In Jazzy `async_slam_toolbox_node` is a
+  LifecycleNode. Launched as a plain Node it starts, appears in
+  `ros2 node list`, and then stays `unconfigured` forever — no `/scan`
+  subscription, no `/map`, no `map→odom`. A robot that boots perfectly and
+  never maps anything.
+- **Hardcoded `use_sim_time: True`.** V2 set this in ~15 Nav2 sections. On the
+  real robot, with no `/clock` publisher, Nav2 blocks waiting for time and
+  never accepts a goal, logging nothing useful. V3 removes it everywhere and
+  lets the launch argument be the single source of truth.
+
+Why the velocity chain changed at all: Jazzy's `diff_drive_controller` takes
+`TwistStamped` only — `use_stamped_vel` was removed and `~/cmd_vel_unstamped`
+no longer exists. Rather than restamp Nav2, the FSM and teleop, the whole
+priority chain stays on plain `Twist` and converts once at the last hop via
+`twist_stamper_node`, in **simulation only**. The hardware path carries no
+message-type change at all, which is deliberate: it is the path that is
+hardest to test and most expensive to get wrong.
 
 ## V2 vs V1 (yoru_robot)
 
@@ -543,7 +669,7 @@ Wheel odometry is dead reckoning, and the physical robot violates its
 assumptions:
 
 - **Carpet.** Soft pile deforms under the wheels, so the effective rolling
-  radius differs from the measured 32.5 mm, and the wheels sink and drag.
+  radius differs from the measured 43.5 mm, and the wheels sink and drag.
   Distance travelled is systematically under-reported compared with hard
   flooring.
 - **Weight distribution.** The battery, Pi and lidar are not centred over
@@ -556,11 +682,12 @@ assumptions:
   reports distance that was never travelled, which is why turning in place
   is the worst case for drift.
 - **Calibration uncertainty.** `enc_counts_per_rev` was measured by hand
-  rotation and gave inconsistent readings across attempts (~1965 vs ~3166 in
-  separate sessions). 1965 is in use, but it was never confirmed by a
-  controlled test, and this single constant scales every distance the robot
-  believes it has travelled. **If maps come out smeared or the robot
-  consistently overshoots or stops short, verify this value first.**
+  rotation and gave inconsistent readings across attempts — ~1965 vs ~3166 in
+  separate sessions on the original 65 mm wheels, then 1320 after the rewheel
+  to 87 mm. **1320 is in use and has never been confirmed by a controlled
+  test.** This single constant scales every distance the robot believes it has
+  travelled. If maps come out smeared or the robot consistently overshoots or
+  stops short, verify this value first — before touching Nav2.
 
 AMCL corrects accumulated drift by matching lidar scans against the saved
 map, so absolute position is recovered as long as the surroundings are
