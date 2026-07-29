@@ -1,15 +1,18 @@
 <?xml version="1.0"?>
 <!--
-  Two-room compliance test world.
+  Two-room compliance test world.  GAZEBO HARMONIC (ROS 2 Jazzy).
 
-  Layout (top view, metres):
+  Layout (top view, metres). NOTE: this diagram deliberately avoids the
+  two-hyphen sequence, which is illegal inside an XML comment. V2's version
+  drew the walls with hyphens; Gazebo Classic's lenient parser accepted it,
+  but a strict XML parser rejects the file outright at line 7.
 
-        y=+4 +--------------------+--------------------+
+        y=+4 +====================+====================+
              |   ROOM B (west)    |    ROOM A (east)   |
              |                 [door]                  |
              |  walker actor      |   smoker actor     |
-             |  CCTV2 at x=-5.8 <-|-> CCTV1 at x=+5.8  |
-        y=-4 +--------------------+--------------------+
+             |  CCTV2 at x=-5.8 <=|=> CCTV1 at x=+5.8  |
+        y=-4 +====================+====================+
             x=-6        x=0 (internal wall)         x=+6
 
   Robot spawns at the doorway (0, 0) so the SLAM map frame matches world
@@ -19,13 +22,54 @@
 
   CCTV poses/intrinsics MUST match coordinate_transform parameters in
   config/yoru_sim.yaml.
+
+  PORTED FROM GAZEBO CLASSIC:
+    - world-level system plugins are now explicit. Classic loaded physics,
+      sensors and transport implicitly; Harmonic loads NOTHING unless
+      listed. Omitting the Sensors system is the classic silent failure -
+      the world renders fine and no camera or lidar ever produces data.
+    - libgazebo_ros_camera.so removed from both CCTV sensors. Harmonic
+      sensors publish to Gazebo Transport; ros_gz_bridge
+      (yoru_base/config/gz_bridge.yaml) carries them onto ROS.
+    - <include><uri>model://sun</uri> replaced with an inline directional
+      light: model://sun came from Classic's bundled model database, which
+      Harmonic does not ship.
+    - actor skins/animations now come from Fuel. Classic bundled stand.dae
+      and walk.dae locally; Harmonic does not, so they are fetched by URL.
+      NOTE: the FIRST run needs internet access to download and cache them.
+      Cached afterwards in ~/.gz/fuel.
 -->
-<sdf version="1.6">
+<sdf version="1.9">
   <world name="two_room_world">
 
-    <include>
-      <uri>model://sun</uri>
-    </include>
+    <!-- ================= Harmonic system plugins ==================== -->
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+    <!-- Without this, the lidar and all three cameras produce nothing. -->
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <gravity>0 0 -9.8</gravity>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
 
     <model name="ground_plane">
       <static>true</static>
@@ -129,16 +173,16 @@
         </visual>
         <sensor name="cctv1" type="camera">
           <pose>0 0 0 0 0 0</pose>
+          <topic>cctv1/image_raw</topic>
+          <gz_frame_id>cctv1_link</gz_frame_id>
           <update_rate>10</update_rate>
+          <always_on>true</always_on>
           <visualize>false</visualize>
           <camera>
             <horizontal_fov>1.3</horizontal_fov>
             <image><width>640</width><height>480</height><format>R8G8B8</format></image>
             <clip><near>0.05</near><far>20.0</far></clip>
           </camera>
-          <plugin name="cctv1_controller" filename="libgazebo_ros_camera.so">
-            <frame_name>cctv1_link_optical</frame_name>
-          </plugin>
         </sensor>
       </link>
     </model>
@@ -154,37 +198,40 @@
         </visual>
         <sensor name="cctv2" type="camera">
           <pose>0 0 0 0 0 0</pose>
+          <topic>cctv2/image_raw</topic>
+          <gz_frame_id>cctv2_link</gz_frame_id>
           <update_rate>10</update_rate>
+          <always_on>true</always_on>
           <visualize>false</visualize>
           <camera>
             <horizontal_fov>1.3</horizontal_fov>
             <image><width>640</width><height>480</height><format>R8G8B8</format></image>
             <clip><near>0.05</near><far>20.0</far></clip>
           </camera>
-          <plugin name="cctv2_controller" filename="libgazebo_ros_camera.so">
-            <frame_name>cctv2_link_optical</frame_name>
-          </plugin>
         </sensor>
       </link>
     </model>
 
     <!-- Room A: standing person (the scenario publisher attaches the
-         cigarette to this person's detection on the cctv1 pipeline) -->
+         cigarette to this person's detection on the cctv1 pipeline).
+         talk_b.dae is a stationary upright pose - the Harmonic equivalent
+         of Classic's stand.dae. Its scale is 0.055 because the Fuel mesh
+         is authored in centimetres. -->
     <actor name="person_smoking">
       <skin>
-        <filename>stand.dae</filename>
-        <scale>1.0</scale>
+        <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/talk_b.dae</filename>
+        <scale>0.055</scale>
       </skin>
       <animation name="standing">
-        <filename>stand.dae</filename>
-        <scale>1.0</scale>
+        <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/talk_b.dae</filename>
+        <scale>0.055</scale>
       </animation>
       <script>
         <loop>true</loop>
         <auto_start>true</auto_start>
         <trajectory id="0" type="standing">
-          <waypoint><time>0</time><pose>3.0 0.3 0 0 0 3.14159</pose></waypoint>
-          <waypoint><time>60</time><pose>3.0 0.3 0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>0</time><pose>3.0 0.3 1.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>60</time><pose>3.0 0.3 1.0 0 0 3.14159</pose></waypoint>
         </trajectory>
       </script>
     </actor>
@@ -192,11 +239,11 @@
     <!-- Room B: person just walking - must NOT trigger any escalation -->
     <actor name="person_walking">
       <skin>
-        <filename>walk.dae</filename>
+        <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
         <scale>1.0</scale>
       </skin>
       <animation name="walking">
-        <filename>walk.dae</filename>
+        <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
         <scale>1.0</scale>
         <interpolate_x>true</interpolate_x>
       </animation>
@@ -204,19 +251,14 @@
         <loop>true</loop>
         <auto_start>true</auto_start>
         <trajectory id="0" type="walking">
-          <waypoint><time>0</time><pose>-3.0 1.3 0 0 0 -1.5708</pose></waypoint>
-          <waypoint><time>8</time><pose>-3.0 -1.3 0 0 0 -1.5708</pose></waypoint>
-          <waypoint><time>10</time><pose>-3.0 -1.3 0 0 0 1.5708</pose></waypoint>
-          <waypoint><time>18</time><pose>-3.0 1.3 0 0 0 1.5708</pose></waypoint>
-          <waypoint><time>20</time><pose>-3.0 1.3 0 0 0 -1.5708</pose></waypoint>
+          <waypoint><time>0</time><pose>-3.0 1.3 1.0 0 0 -1.5708</pose></waypoint>
+          <waypoint><time>8</time><pose>-3.0 -1.3 1.0 0 0 -1.5708</pose></waypoint>
+          <waypoint><time>10</time><pose>-3.0 -1.3 1.0 0 0 1.5708</pose></waypoint>
+          <waypoint><time>18</time><pose>-3.0 1.3 1.0 0 0 1.5708</pose></waypoint>
+          <waypoint><time>20</time><pose>-3.0 1.3 1.0 0 0 -1.5708</pose></waypoint>
         </trajectory>
       </script>
     </actor>
-
-    <physics type="ode">
-      <real_time_update_rate>1000.0</real_time_update_rate>
-      <max_step_size>0.001</max_step_size>
-    </physics>
 
   </world>
 </sdf>

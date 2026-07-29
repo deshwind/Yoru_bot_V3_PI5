@@ -1,4 +1,4 @@
-"""SIMULATED ROBOT bring-up (Yoru V2) - the sim stand-in for the real robot.
+"""SIMULATED ROBOT bring-up (Yoru V3) - the sim stand-in for the real robot.
 
     Terminal 1:  ./start_sim.sh          (this launch)
     Terminal 2:  ./start_server.sh sim   (perception + FSM + dashboard)
@@ -8,6 +8,19 @@ on the robot itself - robot description + Gazebo (two-room world with CCTV
 cameras) + ros2_control + twist_mux + SLAM or AMCL + Nav2 + RViz. The
 server terminal runs the CCTV perception, escalation FSM and the admin
 dashboard, exactly like it does for the real robot.
+
+PORTED TO GAZEBO HARMONIC (ROS 2 Jazzy)
+---------------------------------------
+Gazebo Classic went EOL in January 2025 and Jazzy does not support it.
+What changed here:
+
+    gazebo_ros/gazebo.launch.py     ->  ros_gz_sim/gz_sim.launch.py
+    gazebo_ros spawn_entity.py      ->  ros_gz_sim create
+    per-sensor ROS plugins          ->  ros_gz_bridge (config/gz_bridge.yaml)
+    GAZEBO_MODEL_PATH               ->  GZ_SIM_RESOURCE_PATH
+
+config/gazebo_params.yaml is gone: it configured Classic's ROS plugin
+publish rate, which has no Harmonic equivalent.
 
 First run (no saved map): boots in MAPPING mode - drive with the keyboard
 from the dashboard Setup screen (or the joystick), press Save Map, mark the
@@ -27,11 +40,12 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
-                            OpaqueFunction, TimerAction)
+from launch.actions import (AppendEnvironmentVariable, DeclareLaunchArgument,
+                            IncludeLaunchDescription, OpaqueFunction,
+                            TimerAction)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 DEFAULT_MAP = os.path.expanduser('~/Yoru_bot_V3/maps/main_map.yaml')
@@ -98,22 +112,44 @@ def generate_launch_description():
         launch_arguments={'use_sim_time': 'true',
                           'use_ros2_control': 'true'}.items())
 
-    # --- Gazebo with the compliance world ---
-    gazebo_params = os.path.join(yoru_base_dir, 'config', 'gazebo_params.yaml')
+    # Harmonic resolves package://yoru_base/meshes/... through
+    # GZ_SIM_RESOURCE_PATH. Classic used the <gazebo_ros gazebo_model_path>
+    # export in package.xml, which Harmonic ignores - without this the
+    # chassis mesh (body_bot.stl) silently fails to load and the robot
+    # appears as bare collision boxes.
+    set_resource_path = AppendEnvironmentVariable(
+        'GZ_SIM_RESOURCE_PATH',
+        os.path.join(get_package_share_directory('yoru_base'), '..'))
+
+    # --- Gazebo Harmonic with the compliance world ---
+    # -r  run immediately (do not wait for the GUI play button); without it
+    #     /clock never advances and every use_sim_time node hangs.
+    # -s  server only, when gui:=false.
+    gz_args = PythonExpression([
+        "'-r -v 1 ' + ('' if '", gui, "' == 'true' else '-s ') + '", world, "'"
+    ])
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory('gazebo_ros'),
-                         'launch', 'gazebo.launch.py')),
-        launch_arguments={
-            'world': world,
-            'gui': gui,
-            'extra_gazebo_args': '--ros-args --params-file ' + gazebo_params,
-        }.items())
+            os.path.join(get_package_share_directory('ros_gz_sim'),
+                         'launch', 'gz_sim.launch.py')),
+        launch_arguments={'gz_args': gz_args,
+                          'on_exit_shutdown': 'true'}.items())
 
     spawn_entity = Node(
-        package='gazebo_ros', executable='spawn_entity.py',
-        arguments=['-topic', 'robot_description', '-entity', 'yoru_robot',
+        package='ros_gz_sim', executable='create',
+        arguments=['-topic', 'robot_description',
+                   '-name', 'yoru_robot',
                    '-x', '0.0', '-y', '0.0', '-z', '0.05'],
+        output='screen')
+
+    # Carries Gazebo Transport topics onto ROS. Harmonic has no per-sensor
+    # ROS plugins, so without this there is no /clock, /scan or camera feed.
+    gz_bridge = Node(
+        package='ros_gz_bridge', executable='parameter_bridge',
+        name='gz_bridge',
+        parameters=[{'config_file': os.path.join(yoru_base_dir, 'config',
+                                                 'gz_bridge.yaml'),
+                     'use_sim_time': True}],
         output='screen')
 
     diff_drive_spawner = Node(package='controller_manager', executable='spawner',
@@ -158,6 +194,7 @@ def generate_launch_description():
         arguments=['--x', '5.8', '--y', '0', '--z', '2.5',
                    '--roll', '0', '--pitch', '0.55', '--yaw', '3.14159',
                    '--frame-id', 'map', '--child-frame-id', 'cctv1_link'],
+        parameters=[{'use_sim_time': True}],
         output='screen')
     cctv2_tf = Node(
         package='tf2_ros', executable='static_transform_publisher',
@@ -165,6 +202,7 @@ def generate_launch_description():
         arguments=['--x', '-5.8', '--y', '0', '--z', '2.5',
                    '--roll', '0', '--pitch', '0.55', '--yaw', '0',
                    '--frame-id', 'map', '--child-frame-id', 'cctv2_link'],
+        parameters=[{'use_sim_time': True}],
         output='screen')
 
     rviz_node = Node(
@@ -175,10 +213,12 @@ def generate_launch_description():
         output='screen')
 
     return LaunchDescription(declare_args + [
+        set_resource_path,
         rsp,
         twist_mux,
         twist_stamper,
         gazebo,
+        gz_bridge,
         spawn_entity,
         diff_drive_spawner,
         joint_broad_spawner,

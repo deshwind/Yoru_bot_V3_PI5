@@ -1,6 +1,38 @@
 <?xml version="1.0"?>
+<!--
+  ros2_control hardware description.
+
+  PORTED TO GAZEBO HARMONIC (ROS 2 Jazzy).
+
+  Gazebo Classic went end-of-life in January 2025 and Jazzy does not support
+  it; gazebo_ros2_control was never released for Jazzy/Noble at all. The sim
+  plugin therefore moves to gz_ros2_control:
+
+      gazebo_ros2_control/GazeboSystem  ->  gz_ros2_control/GazeboSimSystem
+      libgazebo_ros2_control.so         ->  libgz_ros2_control-system.so
+
+  NOTE ON THE REAL ROBOT: this file only matters in simulation. The physical
+  robot launches with use_ros2_control:=false and drives its motors through
+  yoru_core/arduino_driver_node over USB serial, so no controller_manager
+  runs on the Pi at all.
+-->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
+    <!--
+      Real-robot ros2_control block, kept for reference only.
+
+      It names diffdrive_arduino/DiffDriveArduinoHardware, a third-party
+      package that is NOT vendored in this repo and NOT installed by
+      setup_pi.sh. Nothing launches it: real_robot.launch.py passes
+      use_ros2_control:=false, so this branch is never expanded on the
+      robot. It is left in place because it documents the ros2_control route
+      for anyone who later wants to replace arduino_driver_node with a
+      proper hardware interface - but be aware it will not build as-is.
+
+      Note also that on Jazzy a diff_drive_controller driven from this block
+      would take TwistStamped on ~/cmd_vel, so it would need the same
+      twist_stamper_node that sim.launch.py uses.
+    -->
     <xacro:unless value="$(arg sim_mode)">
         <ros2_control name="RealRobot" type="system">
             <hardware>
@@ -8,10 +40,12 @@
                 <param name="left_wheel_name">left_wheel_joint</param>
                 <param name="right_wheel_name">right_wheel_joint</param>
                 <param name="loop_rate">30</param>
-                <param name="device">/dev/ttyUSB0</param>
+                <param name="device">/dev/arduino</param>
                 <param name="baud_rate">57600</param>
                 <param name="timeout_ms">1000</param>
-                <param name="enc_counts_per_rev">3436</param>
+                <!-- Matches arduino_driver_node: recalibrated with the
+                     87 mm wheels and new encoders. -->
+                <param name="enc_counts_per_rev">1320</param>
             </hardware>
             <joint name="left_wheel_joint">
                 <command_interface name="velocity">
@@ -32,10 +66,11 @@
         </ros2_control>
     </xacro:unless>
 
+    <!-- Simulation: gz_ros2_control drives the wheel joints in Gazebo. -->
     <xacro:if value="$(arg sim_mode)">
-        <ros2_control name="GazeboSystem" type="system">
+        <ros2_control name="GazeboSimSystem" type="system">
             <hardware>
-                <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+                <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </hardware>
             <joint name="left_wheel_joint">
                 <command_interface name="velocity">
@@ -54,13 +89,14 @@
                 <state_interface name="position"/>
             </joint>
         </ros2_control>
-    </xacro:if>
 
-    <gazebo>
-        <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
-            <parameters>$(find yoru_base)/config/my_controllers.yaml</parameters>
-            <parameters>$(find yoru_base)/config/gaz_ros2_ctl_use_sim.yaml</parameters>
-        </plugin>
-    </gazebo>
+        <gazebo>
+            <plugin filename="libgz_ros2_control-system.so"
+                    name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+                <parameters>$(find yoru_base)/config/my_controllers.yaml</parameters>
+                <parameters>$(find yoru_base)/config/gaz_ros2_ctl_use_sim.yaml</parameters>
+            </plugin>
+        </gazebo>
+    </xacro:if>
 
 </robot>

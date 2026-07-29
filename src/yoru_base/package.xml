@@ -14,14 +14,32 @@
   <exec_depend>twist_mux</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_common</exec_depend>
+
+  <!-- Lidar driver (real robot) -->
+  <exec_depend>rplidar_ros</exec_depend>
+
+  <!-- Joystick teleop -->
+  <exec_depend>joy</exec_depend>
+  <exec_depend>teleop_twist_joy</exec_depend>
+
+  <!-- Simulation: Gazebo Harmonic via ros_gz. Replaces gazebo_ros, which
+       has no Jazzy release - Gazebo Classic went EOL in January 2025. -->
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>gz_ros2_control</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>diff_drive_controller</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
-    <!-- Lets Gazebo resolve package://yoru_base/meshes/... for the chassis
-         mesh (gazebo_ros adds this to GAZEBO_MODEL_PATH at launch). -->
-    <gazebo_ros gazebo_model_path="${prefix}/.."/>
+    <!-- NOTE: the Classic <gazebo_ros gazebo_model_path="..."/> export is
+         gone. Harmonic ignores it; sim.launch.py appends the same directory
+         to GZ_SIM_RESOURCE_PATH instead, which is how package://yoru_base/
+         meshes/body_bot.stl still resolves. -->
   </export>
 </package>

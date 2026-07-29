@@ -12,7 +12,10 @@
 
   <exec_depend>yoru_core</exec_depend>
   <exec_depend>yoru_base</exec_depend>
-  <exec_depend>gazebo_ros</exec_depend>
+  <!-- Gazebo Harmonic via ros_gz. gazebo_ros (Classic) has no Jazzy
+       release; Classic went end-of-life in January 2025. -->
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>twist_mux</exec_depend>

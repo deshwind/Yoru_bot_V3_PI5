@@ -10,7 +10,15 @@
         <xacro:include filename="ros2_control.xacro" />
     </xacro:if>
     <xacro:unless value="$(arg use_ros2_control)">
-        <xacro:include filename="gazebo_control.xacro" />
+        <!-- Gazebo's own diff-drive plugin, as the alternative to
+             ros2_control. Gated on sim_mode: the REAL robot also launches
+             with use_ros2_control:=false (it drives motors through
+             arduino_driver_node), and without this guard the Pi's URDF
+             would carry a Gazebo drive plugin describing hardware that
+             does not exist there. -->
+        <xacro:if value="$(arg sim_mode)">
+            <xacro:include filename="gazebo_control.xacro" />
+        </xacro:if>
     </xacro:unless>
     <xacro:include filename="lidar.xacro" />
     <xacro:include filename="camera.xacro" />

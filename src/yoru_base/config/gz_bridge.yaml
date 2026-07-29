@@ -1,0 +1,87 @@
+# ros_gz_bridge topic map for the Gazebo Harmonic simulation.
+#
+# Gazebo Classic had a ROS plugin per sensor (libgazebo_ros_camera.so,
+# libgazebo_ros_ray_sensor.so, ...) that published directly onto ROS topics.
+# Harmonic does not: its sensors publish onto Gazebo Transport, and this
+# bridge is what carries them across. Every simulated topic the ROS side
+# consumes has to appear here or it simply will not exist.
+#
+# direction:
+#   GZ_TO_ROS   Gazebo publishes, ROS subscribes
+#   ROS_TO_GZ   ROS publishes, Gazebo subscribes
+#   BIDIRECTIONAL
+#
+# Check the Gazebo side of any of these with:
+#   gz topic -l                 # list
+#   gz topic -e -t /scan        # echo
+
+# --- Clock -------------------------------------------------------------
+# THE most important entry. Everything in the sim runs with
+# use_sim_time:=true, so without /clock every ROS node blocks forever
+# waiting for time to start and the whole stack appears hung with no error.
+- ros_topic_name: "/clock"
+  gz_topic_name: "/clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "gz.msgs.Clock"
+  direction: GZ_TO_ROS
+
+# --- Lidar -------------------------------------------------------------
+# Feeds slam_toolbox, AMCL, both costmaps and the FSM emergency stop.
+- ros_topic_name: "/scan"
+  gz_topic_name: "/scan"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+# --- Robot onboard camera ----------------------------------------------
+# Used for the incident emailer's close-up shots and the dashboard's robot
+# camera view.
+- ros_topic_name: "/camera/image_raw"
+  gz_topic_name: "/camera/image_raw"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/camera/camera_info"
+  gz_topic_name: "/camera/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+# --- Simulated CCTV cameras --------------------------------------------
+# The two ceiling cameras in the world file. These are the YOLO pipeline's
+# input in simulation, standing in for the laptop webcam and the C920.
+- ros_topic_name: "/cctv1/image_raw"
+  gz_topic_name: "/cctv1/image_raw"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/cctv1/camera_info"
+  gz_topic_name: "/cctv1/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/cctv2/image_raw"
+  gz_topic_name: "/cctv2/image_raw"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/cctv2/camera_info"
+  gz_topic_name: "/cctv2/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+# --- Velocity command --------------------------------------------------
+# Only used on the use_ros2_control:=false path, where Gazebo's own
+# DiffDrive system subscribes to it (see description/gazebo_control.xacro).
+# On the default ros2_control path gz_ros2_control owns the joints directly
+# and this entry is simply unused - harmless either way.
+- ros_topic_name: "/cmd_vel_mux"
+  gz_topic_name: "/cmd_vel_mux"
+  ros_type_name: "geometry_msgs/msg/Twist"
+  gz_type_name: "gz.msgs.Twist"
+  direction: ROS_TO_GZ

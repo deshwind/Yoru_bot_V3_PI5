@@ -1,4 +1,20 @@
 <?xml version="1.0"?>
+<!--
+  Robot onboard camera - links, joints and the Gazebo Harmonic sensor.
+
+  PORTED FROM GAZEBO CLASSIC. What changed:
+    libgazebo_ros_camera.so plugin  -> removed entirely
+    <format>R8G8B8</format>         -> unchanged, but now under <camera>
+    added <topic>, <gz_frame_id>, <camera_info_topic>
+
+  Harmonic's Sensors system publishes to Gazebo Transport; ros_gz_bridge
+  (config/gz_bridge.yaml) carries the image and camera_info onto ROS.
+
+  camera_link_optical exists because ROS vision convention is z-forward,
+  x-right while the URDF link is x-forward, z-up. gz_frame_id points at the
+  optical frame so the projected geometry matches what image consumers
+  expect.
+-->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" >
 
     <!-- Tilted up so a standing person's face is in frame at the 1.5 m
@@ -41,8 +57,11 @@
 
         <sensor name="camera" type="camera">
             <pose> 0 0 0 0 0 0 </pose>
-            <visualize>true</visualize>
+            <topic>camera/image_raw</topic>
+            <gz_frame_id>camera_link_optical</gz_frame_id>
             <update_rate>10</update_rate>
+            <always_on>true</always_on>
+            <visualize>true</visualize>
             <camera>
                 <horizontal_fov>1.089</horizontal_fov>
                 <image>
@@ -55,9 +74,6 @@
                     <far>8.0</far>
                 </clip>
             </camera>
-            <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
-                <frame_name>camera_link_optical</frame_name>
-            </plugin>
         </sensor>
     </gazebo>
 

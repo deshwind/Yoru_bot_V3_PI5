@@ -1,4 +1,26 @@
 <?xml version="1.0"?>
+<!--
+  RPLIDAR A1 - link, joint and the Gazebo Harmonic sensor.
+
+  PORTED FROM GAZEBO CLASSIC. What changed:
+    <sensor type="ray">                 -> <sensor type="gpu_lidar">
+    <ray>...</ray>                      -> <lidar>...</lidar>
+    libgazebo_ros_ray_sensor.so plugin  -> removed entirely
+
+  Harmonic's sensor system publishes straight onto a Gazebo Transport topic
+  (<topic>scan</topic>); there is no per-sensor ROS plugin any more. A
+  ros_gz_bridge entry in config/gz_bridge.yaml carries it onto the ROS
+  /scan topic. The world must load the Sensors system for any of this to
+  run - see worlds/*.world.
+
+  <gz_frame_id> is required. Without it the LaserScan arrives stamped with
+  Gazebo's own scoped link name, TF cannot resolve it, and both the costmaps
+  and slam_toolbox silently drop every scan.
+
+  The range floor stays at 0.3 m: the real lidar sees the robot's own frame
+  at ~0.18 m, and unfiltered those self-hits speckled the whole map and
+  tripped the FSM emergency stop on every approach.
+-->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <joint name="laser_joint" type="fixed">
@@ -37,41 +59,38 @@
   <gazebo reference="laser_frame">
     <material>Gazebo/Black</material>
 
-    <sensor name="laser" type="ray">
+    <sensor name="laser" type="gpu_lidar">
       <pose>0 0 0 0 0 0</pose>
-
+      <topic>scan</topic>
+      <gz_frame_id>laser_frame</gz_frame_id>
+      <update_rate>10</update_rate>
+      <always_on>true</always_on>
       <!-- set true temporarily for debugging -->
       <visualize>false</visualize>
 
-      <update_rate>10</update_rate>
-
-      <ray>
+      <lidar>
         <scan>
           <horizontal>
             <samples>360</samples>
+            <resolution>1</resolution>
             <min_angle>-3.14</min_angle>
             <max_angle>3.14</max_angle>
           </horizontal>
+          <!-- Harmonic validates the vertical block; one ray = planar scan -->
+          <vertical>
+            <samples>1</samples>
+            <resolution>1</resolution>
+            <min_angle>0</min_angle>
+            <max_angle>0</max_angle>
+          </vertical>
         </scan>
 
         <range>
           <min>0.3</min>
           <max>12</max>
+          <resolution>0.01</resolution>
         </range>
-      </ray>
-
-      <plugin name="laser_controller" filename="libgazebo_ros_ray_sensor.so">
-        <ros>
-          <!-- ✅ Correct ROS 2 remap -->
-          <remapping>~/out:=/scan</remapping>
-        </ros>
-
-        <!-- ROS 2 message type -->
-        <output_type>sensor_msgs/LaserScan</output_type>
-
-        <frame_name>laser_frame</frame_name>
-      </plugin>
-
+      </lidar>
     </sensor>
   </gazebo>
 

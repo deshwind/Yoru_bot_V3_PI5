@@ -1,31 +1,66 @@
 <?xml version="1.0"?>
+<!--
+  Gazebo's own differential-drive plugin - the alternative to ros2_control
+  in simulation. Included by robot.urdf.xacro only when
+  use_ros2_control:=false.
+
+  PORTED FROM GAZEBO CLASSIC:
+      libgazebo_ros_diff_drive.so  ->  gz::sim::systems::DiffDrive
+                                       (libgz-sim-diff-drive-system.so)
+
+  The parameter names differ between the two, not just the filename:
+    <wheel_diameter> -> <wheel_radius>,  <odometry_frame> -> <odom_frame>,
+    <publish_odom>   -> <odom_topic> + the OdometryPublisher behaviour.
+
+  IMPORTANT: this plugin subscribes to a Gazebo Transport topic, not a ROS
+  one. <topic>cmd_vel_mux</topic> below is bridged from ROS in
+  config/gz_bridge.yaml, so the twist_mux output reaches it the same way it
+  reaches the real robot's arduino_driver_node.
+
+  In practice the default path is use_ros2_control:=true (see
+  ros2_control.xacro), which is what sim.launch.py uses, because it exercises
+  the same diff_drive_controller stack the URDF describes. This file is the
+  lighter-weight fallback.
+
+  CAUTION: with use_ros2_control:=false the robot has NO ros2_control, so
+  joint_state_broadcaster does not run and the wheels will not animate in
+  RViz - only the base moves. That is expected.
+-->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
     <gazebo>
-        <plugin name="diff_drive" filename="libgazebo_ros_diff_drive.so">
+        <plugin filename="libgz-sim-diff-drive-system.so"
+                name="gz::sim::systems::DiffDrive">
 
             <!-- Wheel Information -->
             <left_joint>left_wheel_joint</left_joint>
             <right_joint>right_wheel_joint</right_joint>
             <wheel_separation>0.32</wheel_separation>
-            <wheel_diameter>0.087</wheel_diameter>
-
+            <wheel_radius>0.0435</wheel_radius>
 
             <!-- Limits -->
-            <max_wheel_torque>200</max_wheel_torque>
-            <max_wheel_acceleration>10.0</max_wheel_acceleration>
+            <max_linear_acceleration>10.0</max_linear_acceleration>
 
-            
+            <!-- Input: bridged from the ROS twist_mux output -->
+            <topic>cmd_vel_mux</topic>
+
             <!-- Output -->
-            <odometry_frame>odom</odometry_frame>
-            <robot_base_frame>base_link</robot_base_frame>
-
-            <publish_odom>true</publish_odom>
-            <publish_odom_tf>true</publish_odom_tf>
-            <publish_wheel_tf>true</publish_wheel_tf>
+            <odom_topic>odom</odom_topic>
+            <tf_topic>/tf</tf_topic>
+            <frame_id>odom</frame_id>
+            <child_frame_id>base_link</child_frame_id>
+            <odom_publish_frequency>50</odom_publish_frequency>
 
         </plugin>
-    </gazebo>
 
+        <!-- Classic published joint states as part of the diff drive plugin;
+             Harmonic needs this stated separately so the wheels animate. -->
+        <plugin filename="libgz-sim-joint-state-publisher-system.so"
+                name="gz::sim::systems::JointStatePublisher">
+            <topic>joint_states</topic>
+            <joint_name>left_wheel_joint</joint_name>
+            <joint_name>right_wheel_joint</joint_name>
+        </plugin>
+    </gazebo>
 
 </robot>
