@@ -23,7 +23,7 @@ yolo_cctv1:
     # Specialist smoking/vape detector (cigarette, vape_device, smoke_vapour)
     # trained on Roboflow datasets - see docs/DATASETS.md; runs on the same
     # frame as the person model and the detections merge
-    extra_model_path: /home/desh/Yoru_bot_V2/smoking_vape_yolov8.pt
+    extra_model_path: /home/desh/Yoru_bot_V3/smoking_vape_yolov8.pt
     extra_confidence_threshold: 0.35
     input_size: 640
     process_hz: 5.0
@@ -59,7 +59,7 @@ confirm_cctv1:
 camera_target_cctv1:
   ros__parameters:
     camera_id: cctv1
-    cameras_file: /home/desh/Yoru_bot_V2/maps/cameras.json
+    cameras_file: /home/desh/Yoru_bot_V3/maps/cameras.json
     input_topic: /compliance/cctv1/confirmed
 
 # ---------------- CCTV 2: Logitech C920 USB camera ----------------
@@ -71,7 +71,7 @@ yolo_cctv2:
     model_path: yolov8n.pt
     use_coco_class_map: true
     confidence_threshold: 0.4
-    extra_model_path: /home/desh/Yoru_bot_V2/smoking_vape_yolov8.pt
+    extra_model_path: /home/desh/Yoru_bot_V3/smoking_vape_yolov8.pt
     extra_confidence_threshold: 0.35
     input_size: 640
     process_hz: 5.0
@@ -106,7 +106,7 @@ confirm_cctv2:
 camera_target_cctv2:
   ros__parameters:
     camera_id: cctv2
-    cameras_file: /home/desh/Yoru_bot_V2/maps/cameras.json
+    cameras_file: /home/desh/Yoru_bot_V3/maps/cameras.json
     input_topic: /compliance/cctv2/confirmed
 
 # ---------------- Shared decision nodes (run on the laptop) ----------------
@@ -199,7 +199,7 @@ patrol_node:
 return_to_base_node:
   ros__parameters:
     bases: [0.0, 0.0, 0.0]          # fallback if no base marked yet
-    bases_file: /home/desh/Yoru_bot_V2/maps/bases.json  # dashboard "Mark
+    bases_file: /home/desh/Yoru_bot_V3/maps/bases.json  # dashboard "Mark
                                     # base spot" button, hot-reloaded
     battery_threshold: 20.0
 
@@ -212,7 +212,11 @@ return_to_base_node:
 #       firmware/yoru_motor_bridge
 arduino_driver_node:
   ros__parameters:
-    serial_port: /dev/serial/by-id/usb-Arduino_LLC_Arduino_Nano_Every_5B65273751544B5931202020FF124545-if00
+    # udev symlink from udev/99-yoru.rules (installed by setup_pi.sh).
+    # The old by-id path still works and is board-independent, but it
+    # bakes in this specific Nano Every's serial number - swap the board
+    # and the robot stops moving with a confusing "cannot open" error.
+    serial_port: /dev/arduino
     baud_rate: 57600
     enc_counts_per_rev: 1320        # new wheels/encoders 2026-07-29
     wheel_radius: 0.0435            # 87mm wheels
@@ -238,8 +242,8 @@ dashboard_node:
     # (stored as a salted hash in data/admin.json).
     drive_speed: 0.1                # slow for mapping: crisper lidar scans
     turn_speed: 0.35
-    data_dir: /home/desh/Yoru_bot_V2/data
-    maps_dir: /home/desh/Yoru_bot_V2/maps
+    data_dir: /home/desh/Yoru_bot_V3/data
+    maps_dir: /home/desh/Yoru_bot_V3/maps
     map_name: main_map
     cctv_image_topics: ['/compliance/cctv1/debug_image/compressed',
                         '/compliance/cctv2/debug_image/compressed']

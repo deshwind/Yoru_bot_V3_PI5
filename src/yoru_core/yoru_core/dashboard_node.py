@@ -59,8 +59,8 @@ class DashboardNode(Node):
 
         self.declare_parameter('port', 8080)
         self.declare_parameter('log_dir', os.path.expanduser('~/compliance_robot_logs'))
-        self.declare_parameter('data_dir', os.path.expanduser('~/Yoru_bot_V2/data'))
-        self.declare_parameter('maps_dir', os.path.expanduser('~/Yoru_bot_V2/maps'))
+        self.declare_parameter('data_dir', os.path.expanduser('~/Yoru_bot_V3/data'))
+        self.declare_parameter('maps_dir', os.path.expanduser('~/Yoru_bot_V3/maps'))
         self.declare_parameter('map_name', 'main_map')
         self.declare_parameter('drive_speed', 0.2)
         self.declare_parameter('turn_speed', 0.8)

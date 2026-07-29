@@ -9,7 +9,7 @@
 set -e
 cd "$(dirname "$0")"
 
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 source ./ros_network.env
 # Gmail app password etc. (git-ignored) - see secrets.env.example
 [ -f secrets.env ] && source ./secrets.env

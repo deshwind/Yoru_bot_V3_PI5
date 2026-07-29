@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# REAL ROBOT - run this ON the Raspberry Pi (deployed with ./deploy_to_pi.sh).
+# REAL ROBOT - run this ON the Raspberry Pi 5 (deployed with ./deploy_to_pi.sh).
 # Runs: motors, RPLIDAR, Pi camera, robot speaker, SLAM/AMCL + Nav2 onboard.
 # The laptop runs ./start_server.sh (both machines on the same Wi-Fi).
 #
@@ -11,8 +11,18 @@
 set -e
 cd "$(dirname "$0")"
 
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 source ./ros_network.env
+
+# Ubuntu 24.04 enforces PEP 668, so pip packages that have no Debian package
+# (piper-tts) live in a venv created by setup_pi.sh. Putting it on PYTHONPATH
+# rather than activating it keeps the system rclpy/cv_bridge visible.
+YORU_VENV="$HOME/yoru_venv"
+if [ -d "$YORU_VENV" ]; then
+    export PATH="$YORU_VENV/bin:$PATH"
+    VENV_SITE=$(echo "$YORU_VENV"/lib/python3*/site-packages)
+    export PYTHONPATH="$VENV_SITE:$PYTHONPATH"
+fi
 
 # Campus Wi-Fi blocks multicast: discovery runs through a FastDDS discovery
 # server hosted here on the robot (see ros_network.env). Start it if it

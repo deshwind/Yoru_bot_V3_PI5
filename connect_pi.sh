@@ -10,7 +10,7 @@ PI_IP="${1:-172.18.16.26}"     # default: this robot's Pi
 PI_USER="${2:-desh}"
 DEST="$PI_USER@$PI_IP"
 
-echo "=== Yoru V2 robot: Raspberry Pi connection check ==="
+echo "=== Yoru V3 robot: Raspberry Pi 5 connection check ==="
 echo "Target: $DEST"
 echo
 
@@ -33,7 +33,7 @@ fi
 
 echo "3) SSH login + identity..."
 if ssh -o ConnectTimeout=5 -o BatchMode=yes "$DEST" \
-       'echo "   OK - logged in: $(hostname) ($(uname -m)), ROS $(. /opt/ros/humble/setup.bash 2>/dev/null; echo $ROS_DISTRO)"' 2>/dev/null; then
+       'echo "   OK - logged in: $(hostname) ($(uname -m)), ROS $(. /opt/ros/jazzy/setup.bash 2>/dev/null; echo $ROS_DISTRO)"' 2>/dev/null; then
     :
 else
     echo "   FAIL - could not log in without a password."

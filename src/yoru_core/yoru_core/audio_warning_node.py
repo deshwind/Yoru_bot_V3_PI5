@@ -42,7 +42,7 @@ class AudioWarningNode(Node):
         self.declare_parameter('aplay_device', 'default')
         # Piper neural voice (natural). Model + .onnx.json expected together.
         self.declare_parameter('piper_model', os.path.expanduser(
-            '~/Yoru_bot_V2/voices/en_GB-alba-medium.onnx'))
+            '~/Yoru_bot_V3/voices/en_GB-alba-medium.onnx'))
         self.declare_parameter('espeak_speed', 140)
         self.declare_parameter('espeak_amplitude', 200)
         self.declare_parameter('espeak_voice', 'en')

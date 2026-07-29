@@ -17,7 +17,7 @@ and goes straight on duty.
 Arguments:
   mode        : auto (default) | mapping | localization
                 auto = mapping if maps/main_map.yaml is missing, else localization
-  map         : saved map yaml (default: ~/Yoru_bot_V2/maps/main_map.yaml)
+  map         : saved map yaml (default: ~/Yoru_bot_V3/maps/main_map.yaml)
   world       : Gazebo world file (default: two_room_world.world)
   rviz        : start RViz (default: true)
   gui         : start the Gazebo GUI client (default: true)
@@ -34,7 +34,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
-DEFAULT_MAP = os.path.expanduser('~/Yoru_bot_V2/maps/main_map.yaml')
+DEFAULT_MAP = os.path.expanduser('~/Yoru_bot_V3/maps/main_map.yaml')
 
 
 def resolve_mode(context):

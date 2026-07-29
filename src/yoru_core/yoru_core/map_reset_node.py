@@ -24,7 +24,7 @@ class MapResetNode(Node):
     def __init__(self):
         super().__init__('map_reset_node')
         self.declare_parameter('maps_dir',
-                               os.path.expanduser('~/Yoru_bot_V2/maps'))
+                               os.path.expanduser('~/Yoru_bot_V3/maps'))
         self.declare_parameter('map_name', 'main_map')
         self.create_subscription(String, '/compliance/map_reset',
                                  self.reset_callback, 10)

@@ -15,7 +15,7 @@
 set -e
 cd "$(dirname "$0")"
 
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 source ./ros_network.env
 # Gmail app password etc. (git-ignored) - see secrets.env.example
 [ -f secrets.env ] && source ./secrets.env
@@ -35,7 +35,7 @@ if [ "$1" = "robot" ]; then
     shift
     echo ""
     echo "============================================================"
-    echo "  Yoru V2 simulation (robot side only)"
+    echo "  Yoru V3 simulation (robot side only)"
     echo "  Now run the server in ANOTHER terminal:  ./start_server.sh sim"
     echo "============================================================"
     echo ""

@@ -31,7 +31,7 @@ class CameraTargetNode(Node):
 
         self.declare_parameter('camera_id', 'cctv1')
         self.declare_parameter('cameras_file',
-                               os.path.expanduser('~/Yoru_bot_V2/maps/cameras.json'))
+                               os.path.expanduser('~/Yoru_bot_V3/maps/cameras.json'))
         self.declare_parameter('input_topic', '/compliance/cctv1/confirmed')
 
         self.cameras = {}

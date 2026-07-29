@@ -1,0 +1,32 @@
+# This repo is edited on Windows and RUN on Linux (Raspberry Pi 5 / Ubuntu).
+# Without this file, git's autocrlf would hand the Pi shell scripts with CRLF
+# line endings, and bash fails on them with the classic
+#     ./start_robot.sh: line 2: $'\r': command not found
+# Forcing LF on everything text-like removes that entire class of bug.
+
+* text=auto eol=lf
+
+# Executables and launch/config files that MUST be LF on the robot
+*.sh      text eol=lf
+*.py      text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.xacro   text eol=lf
+*.urdf    text eol=lf
+*.sdf     text eol=lf
+*.world   text eol=lf
+*.xml     text eol=lf
+*.rules   text eol=lf
+*.env     text eol=lf
+*.ino     text eol=lf
+*.md      text eol=lf
+
+# Binary - never touch
+*.stl     binary
+*.pt      binary
+*.onnx    binary
+*.wav     binary
+*.mp3     binary
+*.png     binary
+*.jpg     binary
+*.pgm     binary

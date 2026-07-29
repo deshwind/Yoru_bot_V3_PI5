@@ -12,7 +12,7 @@ server logs separated (e.g. mirroring the real laptop + Pi deployment).
 
 Arguments (all forwarded):
   mode         : auto (default) | mapping | localization
-  map          : saved map yaml (default: ~/Yoru_bot_V2/maps/main_map.yaml)
+  map          : saved map yaml (default: ~/Yoru_bot_V3/maps/main_map.yaml)
   gui / rviz   : Gazebo GUI / RViz (default: true)
   open_browser : auto-open the dashboard (default: true)
   use_joystick : PS4 admin joystick (default: true)
@@ -26,7 +26,7 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
-DEFAULT_MAP = os.path.expanduser('~/Yoru_bot_V2/maps/main_map.yaml')
+DEFAULT_MAP = os.path.expanduser('~/Yoru_bot_V3/maps/main_map.yaml')
 
 
 def generate_launch_description():
