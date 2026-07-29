@@ -8,8 +8,8 @@ robot is driven by gazebo_ros2_control instead.
   - per-wheel PID velocity control at 50 Hz with anti-windup
   - differential drive kinematics + wheel odometry (odom -> base_link TF)
 
-Subscribes the twist_mux output (default /diff_cont/cmd_vel_unstamped, so
-the same twist_mux config works in sim and on hardware).
+Subscribes the twist_mux output (default /cmd_vel_mux) as plain Twist, the
+same contract as arduino_driver_node.
 """
 
 import math
@@ -59,7 +59,7 @@ class L298nDriverNode(Node):
         self.declare_parameter('kp', 2.0)
         self.declare_parameter('ki', 0.1)
         self.declare_parameter('kd', 0.5)
-        self.declare_parameter('cmd_vel_topic', '/diff_cont/cmd_vel_unstamped')
+        self.declare_parameter('cmd_vel_topic', '/cmd_vel_mux')
         self.declare_parameter('cmd_timeout', 0.5)
 
         try:

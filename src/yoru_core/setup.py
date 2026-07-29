@@ -43,6 +43,7 @@ setup(
             'admin_joy_node = yoru_core.admin_joy_node:main',
             'dashboard_node = yoru_core.dashboard_node:main',
             'camera_publisher_node = yoru_core.camera_publisher_node:main',
+            'twist_stamper_node = yoru_core.twist_stamper_node:main',
         ],
     },
 )

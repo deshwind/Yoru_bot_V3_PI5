@@ -226,7 +226,7 @@ arduino_driver_node:
     kd: 12
     ki: 0
     ko: 50
-    cmd_vel_topic: /diff_cont/cmd_vel_unstamped   # twist_mux output
+    cmd_vel_topic: /cmd_vel_mux     # twist_mux output (plain Twist)
     cmd_timeout: 0.5
     loop_rate: 20.0
 

@@ -120,11 +120,16 @@ def generate_launch_description():
         condition=LaunchConfigurationEquals('camera', 'usb'),
         output='screen')
 
+    # twist_mux arbitrates joystick (100) > tracker/e-stop (20) > Nav2 (10)
+    # and emits plain Twist on /cmd_vel_mux, which arduino_driver_node reads
+    # directly. The hardware path never touches ros2_control, so Jazzy's
+    # TwistStamped requirement does not apply here - only the sim needs the
+    # twist_stamper_node adapter.
     twist_mux_params = os.path.join(yoru_base_dir, 'config', 'twist_mux.yaml')
     twist_mux = Node(
         package='twist_mux', executable='twist_mux',
         parameters=[twist_mux_params],
-        remappings=[('/cmd_vel_out', '/diff_cont/cmd_vel_unstamped')])
+        remappings=[('/cmd_vel_out', '/cmd_vel_mux')])
 
     # The robot's speaker delivers the direct warning on arrival
     # (config section robot_audio_node: speak_pa false, speak_direct true)

@@ -6,6 +6,13 @@ joy_node:
 
 teleop_node:
   ros__parameters:
+    # The whole twist_mux chain is plain Twist; only the last hop into
+    # Jazzy's diff_drive_controller is stamped, by twist_stamper_node.
+    # Stated explicitly so a future change to this default cannot silently
+    # take the joystick off the mux (highest-priority input = manual
+    # override and e-stop, so it must never go quiet).
+    publish_stamped_twist: false
+
     axis_linear:
       x: 1
     scale_linear:

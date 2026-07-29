@@ -25,14 +25,11 @@ def generate_launch_description():
             remappings=[('/cmd_vel','/cmd_vel_joy')]
          )
 
-    # twist_stamper = Node(
-    #         package='twist_stamper',
-    #         executable='twist_stamper',
-    #         parameters=[{'use_sim_time': use_sim_time}],
-    #         remappings=[('/cmd_vel_in','/diff_cont/cmd_vel_unstamped'),
-    #                     ('/cmd_vel_out','/diff_cont/cmd_vel')]
-    #      )
-
+    # NOTE: the Twist -> TwistStamped conversion that used to be sketched
+    # here now lives in sim.launch.py as yoru_core/twist_stamper_node. It
+    # belongs at the END of the twist_mux chain, not on the joystick branch:
+    # putting it here would stamp only the joystick and leave Nav2 and the
+    # FSM's e-stop unable to reach Jazzy's diff_drive_controller.
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -41,5 +38,4 @@ def generate_launch_description():
             description='Use sim time if true'),
         joy_node,
         teleop_node,
-        # twist_stamper       
     ])

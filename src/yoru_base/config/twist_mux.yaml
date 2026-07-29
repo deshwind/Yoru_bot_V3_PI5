@@ -1,5 +1,36 @@
 twist_mux:
   ros__parameters:
+    # ---------------------------------------------------------------------
+    # DO NOT REMOVE. This single line is safety-critical on Jazzy.
+    #
+    # twist_mux reads 'use_stamped' with get_parameter() WITHOUT declaring
+    # it first, and falls back to TRUE when it is absent:
+    #
+    #     bool use_stamped = true;
+    #     if (!nh->get_parameter("use_stamped", use_stamped))
+    #       RCLCPP_INFO(..., "\"use_stamped\" is not declared as parameter,
+    #                         defaulting to \"true\".");
+    #
+    # (ros-teleop/twist_mux, src/twist_mux.cpp)
+    #
+    # The flag switches BOTH the input subscriptions and the output
+    # publisher between Twist and TwistStamped. Left unset, twist_mux would
+    # subscribe as TwistStamped while every publisher upstream sends Twist:
+    #   - Nav2             -> /cmd_vel         (enable_stamped_cmd_vel false)
+    #   - dashboard teleop -> /cmd_vel_tracker
+    #   - FSM e-stop       -> /cmd_vel_tracker
+    #   - teleop_twist_joy -> /cmd_vel_joy
+    #
+    # ROS 2 matches topics by type, so that mismatch produces NO error - the
+    # topics simply never connect. The robot would ignore every velocity
+    # command AND the emergency stop would be silently dead.
+    #
+    # The conversion to TwistStamped happens once, after the mux, in
+    # yoru_core/twist_stamper_node - and only in simulation, because Jazzy's
+    # diff_drive_controller is the only consumer that requires it.
+    # ---------------------------------------------------------------------
+    use_stamped: false
+
     topics:
       navigation:
         topic   : cmd_vel

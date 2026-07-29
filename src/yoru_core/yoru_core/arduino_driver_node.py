@@ -7,8 +7,11 @@ node does the differential-drive kinematics and wheel odometry
 (odom -> base_link TF), so it is a drop-in replacement for the GPIO
 l298n_driver_node with the same topic contract.
 
-Subscribes the twist_mux output (default /diff_cont/cmd_vel_unstamped,
-so the same twist_mux config works in sim and on hardware).
+Subscribes the twist_mux output (default /cmd_vel_mux) as plain Twist.
+
+This node bypasses ros2_control entirely, so Jazzy's move to a
+TwistStamped-only diff_drive_controller does not affect the hardware path -
+only the simulation needs yoru_core/twist_stamper_node to adapt.
 
 Protocol (57600 baud, CR-terminated, request/response):
   m <l> <r>  closed-loop wheel speeds in encoder counts per 33 ms frame
@@ -36,7 +39,9 @@ class ArduinoDriverNode(Node):
     def __init__(self):
         super().__init__('arduino_driver_node')
 
-        self.declare_parameter('serial_port', '/dev/ttyACM0')
+        # udev symlink from udev/99-yoru.rules; /dev/ttyACM0 also works but
+        # is not stable if anything else enumerates first.
+        self.declare_parameter('serial_port', '/dev/arduino')
         self.declare_parameter('baud_rate', 57600)
         # measured 2026-07-07 by hand-rotating the wheels one revolution
         self.declare_parameter('enc_counts_per_rev', 1320)
@@ -48,7 +53,7 @@ class ArduinoDriverNode(Node):
         self.declare_parameter('kd', 12)
         self.declare_parameter('ki', 0)
         self.declare_parameter('ko', 50)
-        self.declare_parameter('cmd_vel_topic', '/diff_cont/cmd_vel_unstamped')
+        self.declare_parameter('cmd_vel_topic', '/cmd_vel_mux')
         self.declare_parameter('cmd_timeout', 0.5)
         self.declare_parameter('loop_rate', 20.0)  # Hz, serial + odometry
 

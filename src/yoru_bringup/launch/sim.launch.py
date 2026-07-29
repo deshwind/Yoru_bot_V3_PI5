@@ -121,11 +121,22 @@ def generate_launch_description():
     joint_broad_spawner = Node(package='controller_manager', executable='spawner',
                                arguments=['joint_broad'])
 
+    # twist_mux arbitrates joystick (100) > tracker/e-stop (20) > Nav2 (10)
+    # and emits plain Twist on /cmd_vel_mux - identical to the real robot.
     twist_mux_params = os.path.join(yoru_base_dir, 'config', 'twist_mux.yaml')
     twist_mux = Node(
         package='twist_mux', executable='twist_mux',
         parameters=[twist_mux_params, {'use_sim_time': True}],
-        remappings=[('/cmd_vel_out', '/diff_cont/cmd_vel_unstamped')])
+        remappings=[('/cmd_vel_out', '/cmd_vel_mux')])
+
+    # Jazzy's diff_drive_controller takes TwistStamped only, so the sim needs
+    # one conversion at the last hop. The real robot does not: its
+    # arduino_driver_node reads the Twist off /cmd_vel_mux directly.
+    twist_stamper = Node(
+        package='yoru_core', executable='twist_stamper_node',
+        parameters=[{'use_sim_time': True, 'frame_id': 'base_link'}],
+        remappings=[('/cmd_vel_in', '/cmd_vel_mux'),
+                    ('/cmd_vel_out', '/diff_cont/cmd_vel')])
 
     # --- SLAM (mapping) or AMCL (saved map): resolved by mode:=auto ---
     slam_or_amcl = OpaqueFunction(function=resolve_mode)
@@ -166,6 +177,7 @@ def generate_launch_description():
     return LaunchDescription(declare_args + [
         rsp,
         twist_mux,
+        twist_stamper,
         gazebo,
         spawn_entity,
         diff_drive_spawner,
