@@ -4,19 +4,30 @@ slam_toolbox:
     ########################
     # Core ROS settings
     ########################
-    use_sim_time: true           # use Gazebo time
-    publish_tf: true             # publish map -> odom
-    provide_odom_frame: true     # slam_toolbox provides odom
+    # NOTE: use_sim_time is deliberately NOT set here. online_async_launch.py
+    # passes it from its launch argument, so there is one source of truth.
+    # V2 hardcoded `true`, which is wrong on the real robot - with no /clock
+    # publisher slam_toolbox waits forever for time and never maps, while
+    # looking perfectly healthy in the logs.
 
-    # Frame names – these MUST match your robot
+    # In Jazzy async_slam_toolbox_node is a LifecycleNode. false = it
+    # self-starts via the configure/activate events in the launch file;
+    # true = an external Nav2 lifecycle manager owns it.
+    use_lifecycle_manager: false
+
+    # Jazzy addition: enables the /slam_toolbox/save_map service used by the
+    # dashboard's Save Map button.
+    use_map_saver: true
+
+    # Frame names - these MUST match the robot's TF tree
     odom_frame: odom
     map_frame: map
-    base_frame: base_footprint   # you have base_footprint in TF tree
+    base_frame: base_footprint
     scan_topic: /scan
-    mode: mapping                # use "localization" with a saved map on the real robot
+    mode: mapping                # "localization" with a saved map
 
     # Start behaviour (uncomment for localization mode with a saved map)
-    # map_file_name: /home/desh/dock_ws/maps/main_map_serial
+    # map_file_name: /home/desh/Yoru_bot_V3/maps/main_map_serial
     # map_start_at_dock: true
 
     debug_logging: false
@@ -24,6 +35,7 @@ slam_toolbox:
     transform_publish_period: 0.02
     map_update_interval: 5.0
     resolution: 0.05
+    restamp_tf: false            # Jazzy addition
     # RPLIDAR A1: 12m max; ignore sub-0.3m returns - the lidar sees the
     # robot's own frame at ~0.18m, which speckled the whole map
     min_laser_range: 0.3

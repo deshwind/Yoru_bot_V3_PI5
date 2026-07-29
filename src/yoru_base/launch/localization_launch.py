@@ -12,14 +12,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# PORTED TO ROS 2 JAZZY.
+#
+# use_sim_time is applied with SetParameter inside a GroupAction rather than
+# rewritten into the params file. This matters, and the reason is subtle:
+#
+# nav2_params.yaml no longer carries use_sim_time keys. RewrittenYaml can
+# insert missing keys, but its add_params() only does so for FULLY QUALIFIED
+# paths - it requires 'ros__parameters' to appear in the dotted path:
+#
+#     yaml_keys = path.split('.')
+#     if 'ros__parameters' in yaml_keys:
+#         yaml = self.updateYamlPathVals(yaml, yaml_keys, new_val)
+#
+# V2 passed the bare leaf key 'use_sim_time', which has no such path. With
+# the key gone from the YAML there is nothing to substitute and nothing gets
+# added, so the rewrite silently becomes a no-op. AMCL would then run on
+# wall-clock time in simulation while Gazebo published /clock, and
+# localisation would drift immediately for no visible reason.
+#
+# yaml_filename is likewise passed as a direct parameter instead of a
+# rewrite, matching upstream Jazzy.
+#
+# yaml_filename is likewise passed as a direct parameter instead of a
+# rewrite, matching upstream Jazzy.
+
 import os
 
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
+from launch.actions import (DeclareLaunchArgument, GroupAction,
+                            SetEnvironmentVariable)
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetParameter
 from nav2_common.launch import RewrittenYaml
 
 
@@ -43,10 +69,10 @@ def generate_launch_description():
     remappings = [('/tf', 'tf'),
                   ('/tf_static', 'tf_static')]
 
-    # Create our own temporary YAML files that include substitutions
-    param_substitutions = {
-        'use_sim_time': use_sim_time,
-        'yaml_filename': map_yaml_file}
+    # Nothing is rewritten any more: use_sim_time comes from SetParameter and
+    # yaml_filename is passed straight to map_server below. RewrittenYaml is
+    # kept so a namespace root_key still works.
+    param_substitutions = {}
 
     configured_params = RewrittenYaml(
         source_file=params_file,
@@ -80,28 +106,39 @@ def generate_launch_description():
             default_value=os.path.join(bringup_dir, 'config', 'nav2_params.yaml'),
             description='Full path to the ROS2 parameters file to use'),
 
-        Node(
-            package='nav2_map_server',
-            executable='map_server',
-            name='map_server',
-            output='screen',
-            parameters=[configured_params],
-            remappings=remappings),
+        GroupAction(actions=[
+            SetParameter('use_sim_time', use_sim_time),
 
-        Node(
-            package='nav2_amcl',
-            executable='amcl',
-            name='amcl',
-            output='screen',
-            parameters=[configured_params],
-            remappings=remappings),
+            Node(
+                package='nav2_map_server',
+                executable='map_server',
+                name='map_server',
+                output='screen',
+                parameters=[configured_params,
+                            {'yaml_filename': map_yaml_file}],
+                remappings=remappings),
 
-        Node(
-            package='nav2_lifecycle_manager',
-            executable='lifecycle_manager',
-            name='lifecycle_manager_localization',
-            output='screen',
-            parameters=[{'use_sim_time': use_sim_time},
-                        {'autostart': autostart},
-                        {'node_names': lifecycle_nodes}])
+            Node(
+                package='nav2_amcl',
+                executable='amcl',
+                name='amcl',
+                output='screen',
+                parameters=[configured_params],
+                remappings=remappings),
+
+            Node(
+                package='nav2_lifecycle_manager',
+                executable='lifecycle_manager',
+                name='lifecycle_manager_localization',
+                output='screen',
+                parameters=[{'autostart': autostart},
+                            {'node_names': lifecycle_nodes},
+                            # Same bond hardening as navigation_launch.py:
+                            # discovery over the FastDDS discovery server on
+                            # the Pi is slow enough that the default 4s bond
+                            # timeout intermittently aborts bringup.
+                            {'bond_timeout': 60.0},
+                            {'attempt_respawn_reconnection': True},
+                            {'bond_respawn_max_duration': 30.0}]),
+        ]),
     ])

@@ -12,6 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# PORTED TO ROS 2 JAZZY.
+#
+# Minimally adapted from the V2 (Humble) copy rather than replacing it with
+# the upstream Jazzy file, for two reasons:
+#
+#   1. Upstream's Jazzy version adds route_server, collision_monitor and
+#      docking_server to lifecycle_nodes. The lifecycle manager requires
+#      EVERY listed node to reach 'active' or the whole navigation bringup
+#      aborts - so adopting it wholesale would make bringup depend on
+#      nav2_route and opennav_docking being installed on the Pi, for
+#      servers this robot never uses.
+#
+#   2. It would drop the local fix in commit 0fea4fb (delayed lifecycle
+#      manager + bond hardening) that stopped a recurring bringup abort on
+#      the real robot. That fix is preserved verbatim below.
+#
+# Jazzy changes applied:
+#   - use_sim_time is now injected with SetParameter from the launch
+#     argument instead of being rewritten into the params file, matching
+#     upstream. nav2_params.yaml no longer carries use_sim_time at all.
+#   - behavior_server publishes through cmd_vel_nav, so recovery behaviours
+#     (spin/backup) go through the velocity smoother like the controller.
+#   - the composable branch is a GroupAction so SetParameter applies there
+#     too.
+#
+# Deliberately KEPT from V2: velocity_smoother remaps cmd_vel_smoothed ->
+# cmd_vel. Upstream Jazzy leaves cmd_vel_smoothed alone because its
+# collision_monitor consumes it and republishes cmd_vel. This robot has no
+# collision_monitor, so without the remap nothing would ever reach
+# twist_mux and the robot would never move.
+
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -22,7 +53,7 @@ from launch.actions import (DeclareLaunchArgument, GroupAction,
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LoadComposableNodes
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetParameter
 from launch_ros.descriptions import ComposableNode
 from nav2_common.launch import RewrittenYaml
 
@@ -58,10 +89,11 @@ def generate_launch_description():
     remappings = [('/tf', 'tf'),
                   ('/tf_static', 'tf_static')]
 
-    # Create our own temporary YAML files that include substitutions
-    param_substitutions = {
-        'use_sim_time': use_sim_time,
-        'autostart': autostart}
+    # Create our own temporary YAML files that include substitutions.
+    # use_sim_time is NOT rewritten here - it is applied with SetParameter
+    # below, so the launch argument is the single source of truth (Jazzy
+    # upstream does the same).
+    param_substitutions = {'autostart': autostart}
 
     configured_params = RewrittenYaml(
             source_file=params_file,
@@ -110,6 +142,7 @@ def generate_launch_description():
     load_nodes = GroupAction(
         condition=IfCondition(PythonExpression(['not ', use_composition])),
         actions=[
+            SetParameter('use_sim_time', use_sim_time),
             Node(
                 package='nav2_controller',
                 executable='controller_server',
@@ -148,7 +181,11 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
-                remappings=remappings),
+                # Jazzy: recovery behaviours publish through cmd_vel_nav so
+                # they pass through the velocity smoother, exactly like the
+                # controller. In Humble they wrote straight to cmd_vel and
+                # bypassed it.
+                remappings=remappings + [('cmd_vel', 'cmd_vel_nav')]),
             Node(
                 package='nav2_bt_navigator',
                 executable='bt_navigator',
@@ -194,8 +231,7 @@ def generate_launch_description():
                     name='lifecycle_manager_navigation',
                     output='screen',
                     arguments=['--ros-args', '--log-level', log_level],
-                    parameters=[{'use_sim_time': use_sim_time},
-                                {'autostart': autostart},
+                    parameters=[{'autostart': autostart},
                                 {'node_names': lifecycle_nodes},
                                 {'bond_timeout': 60.0},
                                 {'attempt_respawn_reconnection': True},
@@ -203,10 +239,15 @@ def generate_launch_description():
         ]
     )
 
-    load_composable_nodes = LoadComposableNodes(
+    # Jazzy: wrapped in a GroupAction so SetParameter reaches the composed
+    # nodes too (upstream made the same change).
+    load_composable_nodes = GroupAction(
         condition=IfCondition(use_composition),
-        target_container=container_name_full,
-        composable_node_descriptions=[
+        actions=[
+          SetParameter('use_sim_time', use_sim_time),
+          LoadComposableNodes(
+            target_container=container_name_full,
+            composable_node_descriptions=[
             ComposableNode(
                 package='nav2_controller',
                 plugin='nav2_controller::ControllerServer',
@@ -230,7 +271,7 @@ def generate_launch_description():
                 plugin='behavior_server::BehaviorServer',
                 name='behavior_server',
                 parameters=[configured_params],
-                remappings=remappings),
+                remappings=remappings + [('cmd_vel', 'cmd_vel_nav')]),
             ComposableNode(
                 package='nav2_bt_navigator',
                 plugin='nav2_bt_navigator::BtNavigator',
@@ -254,9 +295,10 @@ def generate_launch_description():
                 package='nav2_lifecycle_manager',
                 plugin='nav2_lifecycle_manager::LifecycleManager',
                 name='lifecycle_manager_navigation',
-                parameters=[{'use_sim_time': use_sim_time,
-                             'autostart': autostart,
+                parameters=[{'autostart': autostart,
                              'node_names': lifecycle_nodes}]),
+            ],
+          ),
         ],
     )
 
